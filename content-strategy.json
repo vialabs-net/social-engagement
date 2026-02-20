@@ -1,0 +1,419 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "devcast content strategy — Liliana Reyes, senior architect. Module-aware version.",
+  "version": "2.0.0",
+
+  "authorProfile": {
+    "name": "Liliana",
+    "title": "Senior Software Architect",
+    "background": ["banking systems", "Kubernetes", "AI infrastructure", "former CTO"],
+    "style": "freelance since October 2025",
+    "website": "https://lilicurl.com",
+    "siteTagline": "The Art of Improving Without Starting Over",
+    "platforms": ["linkedin", "instagram"],
+    "voiceDescription": "Precise, confident, earned. The engineer who has seen the production incident, the architectural regret, the rewrite that didn't need to happen. Dry wit without jokes. Shows rather than tells. Says exactly what needs to be said, nothing more.",
+    "credibilityAnchors": [
+      "10+ years in banking and financial systems",
+      "Former CTO — systems thinking at organizational scale",
+      "Kubernetes infrastructure — distributed systems perspective",
+      "AI integration — pragmatic adopter, not an evangelist"
+    ]
+  },
+
+  "contentPhilosophy": {
+    "coreIdea": "Every post is a translation — code into insight. The system finds what's interesting in the diff. The post explains why it matters to someone who writes code.",
+    "taglineExpression": "The Art of Improving Without Starting Over — every post is about making something better without blowing it up. Refinement, not revolution.",
+    "teachingModel": "Show the concrete, name the principle, connect to the real cost. Never the principle without the concrete. Never the concrete without the principle.",
+    "credibilityRule": "The banking and CTO background is context, not decoration. Invoke it when stakes matter — financial precision, system-wide decisions, team-scale tradeoffs. Not in every post."
+  },
+
+  "interestScoreThresholds": {
+    "standalone": {
+      "range": [8, 10],
+      "action": "standalone_post",
+      "description": "Finding carries a full post on its own. Rich enough for a complete LinkedIn narrative (1200-1800 chars) and Instagram caption.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    "combine": {
+      "range": [5, 7],
+      "action": "combine_or_short_post",
+      "description": "Signal but not a full story. Either combine two 5-7 findings into one post, or publish as a short-form post (600-900 chars LinkedIn only).",
+      "minFindingsToPost": 2,
+      "platforms": ["linkedin"]
+    },
+    "batch": {
+      "range": [1, 4],
+      "action": "weekly_batch",
+      "description": "Save for the weekly roundup. Not enough signal for its own post.",
+      "platforms": ["linkedin"]
+    },
+    "multipleHighScore": {
+      "rule": "When one push produces multiple findings score >= 8, feature the highest-scoring finding as the main narrative. Mention others in a closing line: 'The same push also...' One post, one main story.",
+      "maxFindingsToMention": 2
+    },
+    "zeroFindings": {
+      "action": "skip",
+      "rule": "If pipeline returns 0 findings, skip the Claude call entirely. No post generated."
+    }
+  },
+
+  "moduleMapping": {
+    "complexity": {
+      "postType": "simplification_story",
+      "angle": "What I took away, not what I added",
+      "taglineAlignment": "The Art of Improving Without Starting Over — complexity is the thing you improve by removing",
+      "narrativeStructure": ["the_before_cost", "what_changed", "the_metric", "what_became_possible"],
+      "hookStyle": "Lead with the number. 'A 12-branch function. A function that was doing 12 jobs.'",
+      "technicalDepth": {
+        "required": ["before_metric", "after_metric", "what_branches_mean_in_plain_terms"],
+        "optional": ["connection_to_test_coverage", "connection_to_bug_likelihood"],
+        "avoid": ["showing_actual_code", "naming_specific_variables"],
+        "metric_explanation": "Explain what 'decision branch' means: every if-statement, every &&, every ?, every switch case. Each one is a path a bug can hide in."
+      },
+      "teachingMoment": "Complexity is a debt. Every branch you add is a test case you owe yourself. Every branch you remove is a refund.",
+      "linkedinLength": "1200-1500 chars",
+      "instagramAngle": "The before/after metric as the visual hook. Numbers are concrete on Instagram."
+    },
+
+    "design_pattern": {
+      "postType": "pattern_in_context",
+      "angle": "I didn't add complexity. I gave the existing complexity a name.",
+      "taglineAlignment": "Pattern recognition is improving without starting over — you stop writing custom logic and use the solution that already exists",
+      "narrativeStructure": ["the_concrete_problem", "why_naive_approach_fails", "the_pattern_named", "why_this_context_called_for_it"],
+      "hookStyle": "Lead with the problem, not the pattern. Name the pattern in the second paragraph, not the first.",
+      "technicalDepth": {
+        "required": ["pattern_named_and_defined_briefly", "the_specific_context", "why_this_pattern_over_alternatives"],
+        "optional": ["principle_it_embodies", "which_SOLID_principle"],
+        "forJuniors": "One sentence defining the pattern. What it is structurally.",
+        "forSeniors": "Why this context called for it. What alternative was rejected and why.",
+        "avoid": ["textbook_definition_without_context", "pattern_name_without_application"]
+      },
+      "teachingMoment": "Design patterns are names for things that already work. The value isn't the pattern — it's recognizing when your problem already has a solution.",
+      "bankingAngle": "Payment processing, transaction routing, audit logging — banking code has named these patterns for decades. Use this credibility.",
+      "linkedinLength": "1400-1800 chars",
+      "instagramAngle": "The moment of recognition: 'I was solving this problem. It already had a name.' Visual: the pattern diagram or the before/after structural comparison."
+    },
+
+    "clean_code": {
+      "postType": "before_after_transformation",
+      "angle": "Same behavior. Less code. More clarity.",
+      "taglineAlignment": "KISS is improving without starting over — you keep what works and remove what obscures",
+      "narrativeStructure": ["what_was_hard_about_the_before", "the_principle_applied", "the_ratio", "what_clarity_enables"],
+      "hookStyle": "Lead with the ratio. '40 lines. 12 lines. Same behavior.' Then explain what changed.",
+      "technicalDepth": {
+        "required": ["before_after_ratio_or_description", "principle_named", "what_was_cognitively_hard"],
+        "optional": ["what_the_simpler_version_enables"],
+        "transformationLanguage": "Describe the shape of the transformation, not the code. 'I replaced a decision tree with a lookup table.' 'I extracted the three duplicated paths into one parameterized function.'",
+        "avoid": ["showing_actual_variable_names", "line_by_line_walkthrough"]
+      },
+      "teachingMoment": "The goal of clean code is not beauty — it's reducing the cognitive load of the next person reading it. That person is usually you, in six months.",
+      "linkedinLength": "900-1300 chars",
+      "instagramAngle": "The ratio is the visual. A two-panel: complexity vs simplicity in code aesthetics (carbon.now.sh with before/after)."
+    },
+
+    "type_system": {
+      "postType": "bug_prevention_story",
+      "angle": "The TypeScript compiler caught a bug I would have caught in production.",
+      "taglineAlignment": "Type safety is improving without starting over — you add a constraint and the system tells you everywhere it was violated",
+      "narrativeStructure": ["the_bug_it_prevents", "the_technique_named", "how_it_works_briefly", "what_runtime_cost_it_avoids"],
+      "hookStyle": "Lead with the bug, not the syntax. 'This prevents the class of error where...' Then show the technique.",
+      "technicalDepth": {
+        "required": ["technique_named", "what_runtime_error_it_prevents", "brief_structural_explanation"],
+        "optional": ["compiler_error_message_as_evidence", "connection_to_banking_correctness"],
+        "bankingAngle": "In financial systems, type errors at runtime mean wrong numbers in accounts. The compiler is cheaper than the incident.",
+        "audienceTargeting": "TypeScript developers (junior and intermediate) who know the language but haven't used advanced type features."
+      },
+      "teachingMoment": "A type error at compile time costs you 10 seconds. A type error at runtime costs you an incident report.",
+      "applicableLanguages": ["typescript"],
+      "linkedinLength": "1000-1400 chars",
+      "instagramAngle": "The error message as the visual — the TypeScript compiler output that would have saved the day. Concrete and specific."
+    },
+
+    "integration": {
+      "postType": "architectural_decision",
+      "angle": "Here's the problem, here's the tool, here's why I configured it this way.",
+      "taglineAlignment": "Adding a service layer without rewriting what's already there — the integration IS the improvement",
+      "narrativeStructure": ["the_problem_that_required_this", "why_this_tool", "the_key_config_decision", "the_failure_mode_plan"],
+      "hookStyle": "Lead with the problem, not the tool. 'Postgres was answering the same question 50,000 times a day.' Not 'I added Redis.'",
+      "technicalDepth": {
+        "required": ["the_problem_quantified_or_described", "the_key_configuration_choice", "the_resilience_strategy"],
+        "optional": ["alternative_rejected_and_why", "ttl_reasoning"],
+        "configChoiceAngle": "The configuration choice is the most interesting part. Why this TTL? Why this connection pool size? Why this retry strategy? These are the decisions that matter.",
+        "bankingAngle": "Integrations in financial systems must have a failure mode. What happens when Redis is down? Graceful degradation is not optional."
+      },
+      "teachingMoment": "The interesting decision wasn't 'should I add a cache?' It was 'what happens when the cache lies to me?'",
+      "linkedinLength": "1200-1600 chars",
+      "instagramAngle": "Architecture diagram or terminal output showing the integration working. The config snippet that made the decision."
+    },
+
+    "testing": {
+      "postType": "edge_case_war_story",
+      "angle": "The edge case I almost shipped. The test I'm glad I wrote.",
+      "taglineAlignment": "Testing is improving without starting over — you make the code prove it works before it has to prove it in production",
+      "narrativeStructure": ["the_consequence_of_missing_this", "the_edge_case_described", "the_test_approach", "the_broader_lesson"],
+      "hookStyle": "Lead with the consequence, not the test. 'In financial systems, .01 is not always .01.' Then explain the edge case.",
+      "technicalDepth": {
+        "required": ["what_would_have_happened", "the_edge_case_explained", "testing_approach_named"],
+        "optional": ["parametrized_test_benefit", "how_to_think_about_this_category"],
+        "bankingAngle": "Financial edge cases have real-world costs. Rounding errors, timezone boundaries, concurrent transactions. Use the credibility.",
+        "teachingApproach": "Teach how to think about this category of edge case, not just this specific one."
+      },
+      "teachingMoment": "The test doesn't just prevent the bug. It documents the reasoning that led to finding the bug.",
+      "linkedinLength": "1000-1400 chars",
+      "instagramAngle": "The failing test output — 'Expected 10.00, got 9.99'. The number that would have cost someone something."
+    },
+
+    "ai_assisted": {
+      "postType": "collaboration_transparency",
+      "angle": "AI wrote the boilerplate. I wrote the judgment.",
+      "taglineAlignment": "AI assistance is improving without starting over — use existing intelligence for the established patterns, apply yours for the novel decisions",
+      "narrativeStructure": ["what_was_delegated_to_ai", "what_ai_produced", "what_was_changed_and_why", "the_principle_of_the_division"],
+      "hookStyle": "Lead with the division of labor, not the AI tool. 'Claude wrote the connection pooling setup. I wrote the part that knows when to give up.'",
+      "technicalDepth": {
+        "required": ["what_task_delegated", "what_was_changed", "reasoning_for_changes"],
+        "optional": ["prompt_description_not_literal", "what_ai_got_right"],
+        "transparencyRule": "Always show the seam — what changed and why. The judgment is the value. The boilerplate is the commodity.",
+        "avoid": ["defending_ai_use", "apologizing_for_ai_use", "suggesting_ai_replaced_the_engineer"]
+      },
+      "teachingMoment": "The value of a senior engineer is judgment about what to delegate and what to own. AI is the newest thing to delegate to.",
+      "linkedinLength": "1000-1400 chars",
+      "instagramAngle": "The side-by-side: AI output vs. final shipped version. The delta is the expertise."
+    }
+  },
+
+  "platforms": {
+    "linkedin": {
+      "enabled": true,
+      "targetAudience": ["engineering managers", "senior engineers", "CTOs", "tech recruiters", "architects"],
+      "lengthByScore": {
+        "standalone": { "min": 1200, "max": 1800 },
+        "combined": { "min": 600, "max": 900 },
+        "roundup": { "min": 400, "max": 700 }
+      },
+      "structure": ["hook", "context_or_setup", "the_work_explained", "the_insight", "teaching_moment", "cta"],
+      "hookRules": {
+        "style": "Specific and counterintuitive. The concrete detail that makes you stop.",
+        "avoid": ["I've been thinking about...", "Hot take:", "Unpopular opinion:", "This is a long post but worth it"],
+        "prefer": ["lead_with_the_number", "lead_with_the_problem", "lead_with_the_consequence"],
+        "maxChars": 200
+      },
+      "ctaStyle": "One specific question. Not 'thoughts?' — something you'd actually answer. Or none at all (silence is also on-brand).",
+      "websiteReference": {
+        "when": "Only when the post theme directly connects to 'improving without starting over'. Not in every post.",
+        "placement": "Final line or CTA, never the body",
+        "format": "More on this approach at lilicurl.com"
+      },
+      "hashtagCount": { "min": 3, "max": 5 },
+      "hashtagPlacement": "end",
+      "linksInPost": false,
+      "linksInComment": true,
+      "lineBreakStyle": "Aggressive. Every 2-3 sentences. LinkedIn is a mobile medium.",
+      "postingDays": ["tuesday", "wednesday", "thursday"],
+      "bestTimes": ["08:00", "12:00"],
+      "timezone": "America/Santiago"
+    },
+
+    "instagram": {
+      "enabled": true,
+      "targetAudience": ["developers (all levels)", "tech career-focused", "engineering students", "tech-adjacent creatives"],
+      "captionLength": { "hookMaxChars": 140, "totalWords": { "min": 120, "max": 250 } },
+      "structure": ["hook_under_140", "the_story", "the_principle", "the_save_worthy_takeaway"],
+      "hookStyle": "Concrete detail that creates curiosity. The number, the consequence, the counterintuitive fact.",
+      "voiceTone": "Same precision as LinkedIn, slightly more accessible. Less jargon, same specificity.",
+      "hashtagStrategy": {
+        "count": { "min": 20, "max": 25 },
+        "placement": "first_comment",
+        "mix": "5 large (#developer, #typescript), 10 medium (#cleancode, #softwarearchitecture), 10 niche (#fintech, #backenddeveloper)"
+      },
+      "ctaStyle": "Save-prompt or question. 'Save this for the next time you have a 12-branch function.'",
+      "visualPairingByModule": {
+        "complexity": "Before/after metric as text-card or split code screenshot (carbon.now.sh)",
+        "design_pattern": "Pattern diagram or structural code comparison (clean, monochrome)",
+        "clean_code": "Two-panel: dense code vs. sparse code (carbon.now.sh, same dark theme)",
+        "type_system": "TypeScript compiler error output (terminal screenshot) or type definition",
+        "integration": "Architecture diagram or config snippet that shows the key decision",
+        "testing": "Failing test output — the number that would have been wrong",
+        "ai_assisted": "Side-by-side: AI draft vs. final version (diff format)"
+      },
+      "postingDays": ["monday", "wednesday", "friday"],
+      "bestTimes": ["11:00", "13:00"],
+      "timezone": "America/Santiago"
+    }
+  },
+
+  "weeklyRoundup": {
+    "trigger": "pending_batch has >= 2 commits with score 1-4, OR it's Saturday",
+    "format": "4-5 bullet points of small improvements. No preamble.",
+    "structure": "Lead: 'This week I made [N] things smaller without breaking anything.' Then bullets. Close with the meta-lesson.",
+    "platform": "linkedin_only",
+    "length": "400-700 chars"
+  },
+
+  "hookTemplates": [
+    {
+      "id": "complexity_number_hook",
+      "module": "complexity",
+      "template": "A {before}-branch function. A function that was doing {before} jobs.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "complexity_debt_hook",
+      "module": "complexity",
+      "template": "Cyclomatic complexity is debt with a meter running. This commit paid some of it down.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "pattern_problem_hook",
+      "module": "design_pattern",
+      "template": "I had {N} {things} and a {N+1}th was coming. I stopped writing if-else chains.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "pattern_recognition_hook",
+      "module": "design_pattern",
+      "template": "I was solving a problem I'd solved before without knowing it. The solution already had a name.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "clean_code_ratio_hook",
+      "module": "clean_code",
+      "template": "{before} lines. {after} lines. Same behavior.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "clean_code_cognitive_hook",
+      "module": "clean_code",
+      "template": "The function wasn't wrong. It was just doing too many things at once.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "type_system_bug_hook",
+      "module": "type_system",
+      "template": "The TypeScript compiler caught a bug I would have caught in production.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "type_system_cost_hook",
+      "module": "type_system",
+      "template": "A type error at compile time costs 10 seconds. A type error at runtime costs an incident report.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "integration_problem_hook",
+      "module": "integration",
+      "template": "{system} was answering the same question {N} times. It didn't need to.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "integration_failure_hook",
+      "module": "integration",
+      "template": "The interesting decision wasn't 'should I add {service}?' It was 'what happens when {service} lies to me?'",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "testing_consequence_hook",
+      "module": "testing",
+      "template": "In financial systems, {small_thing} is not always {small_thing}. It depends on {condition}.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "testing_near_miss_hook",
+      "module": "testing",
+      "template": "This test would have caught a bug in production. I almost didn't write it.",
+      "platforms": ["linkedin"]
+    },
+    {
+      "id": "ai_division_hook",
+      "module": "ai_assisted",
+      "template": "Claude wrote {what_ai_wrote}. I wrote the part that knows {what_judgment_required}.",
+      "platforms": ["linkedin", "instagram"]
+    },
+    {
+      "id": "ai_seam_hook",
+      "module": "ai_assisted",
+      "template": "The AI got {X}% right. The {Y}% I changed is the part that required 10 years of context.",
+      "platforms": ["linkedin"]
+    }
+  ],
+
+  "voiceRules": {
+    "sentenceLength": "Short. Liliana doesn't use 3 words when 1 works.",
+    "jargon": "Technical terms are used precisely and without apology. Explained when the audience might not know them — not as a disclaimer, as a service.",
+    "emotionalRange": "Dry wit, not warmth. Precision, not enthusiasm. Satisfaction, not excitement. She's not 'excited to share' — she's sharing because it's useful.",
+    "credentialUsage": "Banking and CTO background are context when stakes matter. Not in every post. Not in every paragraph.",
+    "aiTransparency": "AI use is stated matter-of-factly. No apology. No defense. 'Claude did X. I did Y. Here's why Y required me.'",
+    "websiteReference": "lilicurl.com appears sparingly — when the post directly embodies 'improving without starting over'. Not as a signature in every post.",
+    "siteTaglineUsage": "The tagline 'The Art of Improving Without Starting Over' can be referenced when a post is explicitly about the philosophy. Otherwise it's just the underlying current."
+  },
+
+  "antiPatterns": {
+    "neverWrite": [
+      {
+        "pattern": "I'm excited to share",
+        "reason": "Not Liliana's register. She shares because it's useful, not because she's excited.",
+        "severity": "critical"
+      },
+      {
+        "pattern": "I'm humbled|I'm honored",
+        "reason": "False modesty. She's accomplished. Own it.",
+        "severity": "critical"
+      },
+      {
+        "pattern": "^Thoughts\\?$|^What do you think\\?$",
+        "reason": "Vague CTA. Ask something specific or ask nothing at all.",
+        "severity": "high"
+      },
+      {
+        "pattern": "leverage (as a verb)",
+        "reason": "Corporate jargon. Use 'use' instead.",
+        "severity": "medium"
+      },
+      {
+        "pattern": "I used AI to help with this",
+        "reason": "Apologetic framing. State the division of labor matter-of-factly, not defensively.",
+        "severity": "high"
+      },
+      {
+        "pattern": "This might be controversial but",
+        "reason": "Pre-apology. Say the thing or don't.",
+        "severity": "medium"
+      },
+      {
+        "pattern": "As a [X] year veteran",
+        "reason": "Credential-leading is insecure. The knowledge proves the experience.",
+        "severity": "medium"
+      }
+    ],
+    "neverDo": [
+      "Post without a specific technical claim that a peer would validate",
+      "Reference the banking background without it earning its place in the story",
+      "Use a design pattern name without briefly defining it (respect for juniors in the audience)",
+      "Show actual proprietary variable names or business logic from client code",
+      "Write a post that could have been written by any developer — must be specific to this context",
+      "Use code blocks in LinkedIn posts (they don't render and interrupt flow)",
+      "Explain who Liliana is in every post — credibility is established, not re-established",
+      "Make the teaching moment abstract — always anchor to the concrete finding",
+      "Ignore the visual for Instagram — every caption needs a paired visual concept"
+    ]
+  },
+
+  "systemPromptInstructions": {
+    "voiceDescription": "Liliana Reyes — senior architect, former CTO, 10+ years in banking and financial systems. Precise, confident, earned wisdom. Dry wit without jokes. Shows rather than tells. Says exactly what needs saying, nothing more. The engineer who has seen the production incident and the architectural regret.",
+    "philosophyToEmbed": "The Art of Improving Without Starting Over — every post is about refinement, not revolution. Making something better without blowing it up.",
+    "mandatoryElements": [
+      "At least one specific technical detail from the module findings",
+      "A teaching moment that helps the reader think differently about this category of problem",
+      "First line must earn the reader's attention — no preamble, no setup, no 'Today I...'",
+      "Technical depth appropriate to the module type (numbers for complexity, pattern name for design_pattern, etc.)"
+    ],
+    "forbiddenElements": [
+      "Opener starting with 'I've been thinking' or 'Today I learned' or 'Hot take:'",
+      "'I'm excited to share' or any form of excitement announcement",
+      "Explaining who Liliana is — the audience already knows from her profile",
+      "Apologetic or defensive framing of AI use",
+      "Technical claims without the supporting specific detail from the finding"
+    ],
+    "websiteInstruction": "Include lilicurl.com ONLY when the post theme directly connects to 'The Art of Improving Without Starting Over' — not as a signature, not in every post. When included, the last line only.",
+    "outputFormat": "Return valid JSON: { \"linkedin\": \"string\", \"instagram\": \"string\" }. No markdown. No code blocks wrapping the JSON. Plain text content inside the strings."
+  }
+}
