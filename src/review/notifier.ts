@@ -22,21 +22,21 @@ export async function notifyNewDraft(
   const [repoOwner, repoName] = commit.repo.split('/');
   const commitUrl = `https://github.com/${commit.repo}/commit/${commit.sha}`;
 
-  const platformLines = results.map(r => {
-    const localTime = r.scheduledAt.toLocaleString('es-CL', { timeZone: 'America/Santiago' });
-    return `- **${r.platform}**: scheduled for ${localTime} CLT — Buffer post ID: \`${r.bufferPostId}\``;
-  });
+  const platformLines = results.map(r =>
+    `- **${r.platform}**: Buffer Idea ID \`${r.bufferIdeaId}\``,
+  );
 
-  const body = `## New draft in Buffer
+  const body = `## New draft in Buffer Ideas
 
 Commit: [\`${commit.sha.slice(0, 7)}\`](${commitUrl}) in \`${commit.repo}\`
 Message: _${commit.message}_
 
-### Scheduled posts
+### Ideas created
 ${platformLines.join('\n')}
 
 ---
-Review and publish from [Buffer](https://buffer.com/app). No action required here.
+Review in [Buffer Ideas](https://publish.buffer.com/ideas), convert to a post, and schedule.
+No action required here.
 
 _This issue will auto-close in 48 hours._`;
 

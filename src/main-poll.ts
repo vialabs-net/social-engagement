@@ -119,12 +119,12 @@ async function main(): Promise<void> {
       const publishResults = [];
 
       if (config.platforms.linkedin.enabled && linkedinDraftId) {
-        const result = await publishToBuffer(bufferClient, storage, config, linkedinDraftId, linkedin, 'linkedin');
+        const result = await publishToBuffer(bufferClient, storage, config, linkedinDraftId, linkedin, 'linkedin', commit.message);
         if (result) publishResults.push(result);
       }
 
       if (config.platforms.instagram.enabled && instagramDraftId) {
-        const result = await publishToBuffer(bufferClient, storage, config, instagramDraftId, instagram, 'instagram');
+        const result = await publishToBuffer(bufferClient, storage, config, instagramDraftId, instagram, 'instagram', commit.message);
         if (result) publishResults.push(result);
       }
 

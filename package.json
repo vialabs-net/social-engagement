@@ -4,11 +4,11 @@
   "description": "Turns GitHub commits into social media posts using specialized code analysis modules",
   "type": "module",
   "scripts": {
-    "setup-buffer": "tsx scripts/setup-buffer.ts",
-    "bootstrap": "tsx scripts/bootstrap-voice.ts",
-    "test-analyze": "tsx scripts/test-analyze.ts",
-    "poll": "tsx src/main-poll.ts",
-    "scan": "tsx src/main-scan.ts",
+    "setup-buffer": "tsx --env-file=.env.local scripts/setup-buffer.ts",
+    "bootstrap": "tsx --env-file=.env.local scripts/bootstrap-voice.ts",
+    "test-analyze": "tsx --env-file=.env.local scripts/test-analyze.ts",
+    "poll": "tsx --env-file=.env.local src/main-poll.ts",
+    "scan": "tsx --env-file=.env.local src/main-scan.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

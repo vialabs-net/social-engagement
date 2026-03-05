@@ -129,6 +129,15 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(rows);
   }
 
+  getScheduledUnpublished(platform: Platform): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE platform = ? AND status = 'scheduled' AND published IS NULL
+      ORDER BY created_at ASC
+    `).all(platform) as VoicePost[];
+    return Promise.resolve(rows);
+  }
+
   claimSlot(slot: SlottedPost): Promise<boolean> {
     try {
       this.db.prepare(`

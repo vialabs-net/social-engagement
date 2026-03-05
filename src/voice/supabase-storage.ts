@@ -109,6 +109,19 @@ export class SupabaseStorage implements IVoiceStorage {
     return (data ?? []) as VoicePost[];
   }
 
+  async getScheduledUnpublished(platform: Platform): Promise<VoicePost[]> {
+    const { data, error } = await this.db
+      .from('voice_posts')
+      .select('*')
+      .eq('platform', platform)
+      .eq('status', 'scheduled')
+      .is('published', null)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(`getScheduledUnpublished failed: ${error.message}`);
+    return (data ?? []) as VoicePost[];
+  }
+
   async claimSlot(slot: SlottedPost): Promise<boolean> {
     const { error } = await this.db
       .from('scheduled_slots')

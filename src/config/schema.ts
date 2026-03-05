@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const PlatformConfigSchema = z.object({
   enabled: z.boolean(),
-  buffer_profile_id: z.string(),
+  buffer_profile_id: z.string().default(''),
 });
 
 export const ConfigSchema = z.object({
@@ -15,6 +15,9 @@ export const ConfigSchema = z.object({
     exclude_repos: z.array(z.string()).default([]),
     exclude_patterns: z.array(z.string()).default([]),
     max_commits_per_push: z.number().int().min(1).default(1),
+  }),
+  buffer: z.object({
+    organization_id: z.string().min(1),
   }),
   platforms: z.object({
     linkedin: PlatformConfigSchema,

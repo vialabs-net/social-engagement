@@ -1,7 +1,6 @@
-# CLAUDE.md — devcast Project Memory
+# CLAUDE.md
 
-This file is the authoritative guide for AI-assisted development sessions on this project.
-Read it fully before writing any code or making architectural decisions.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
@@ -13,6 +12,24 @@ them to Buffer as drafts. Liliana reviews and publishes from Buffer's native UI.
 
 **Author**: Liliana | **Site**: https://lilicurl.com
 **Platforms**: LinkedIn + Instagram (Buffer free tier, 3 channels)
+
+---
+
+## Development Commands
+
+```bash
+npm install                          # install dependencies
+npm run typecheck                    # tsc --noEmit (strict mode, no any)
+npm test                             # vitest run (no test files yet)
+npm run poll                         # run poll-and-generate pipeline locally
+npm run scan                         # run sent-post scanner locally
+npm run setup-buffer                 # list Buffer channels with profile IDs
+npm run bootstrap                    # seed voice history from voice-bootstrap.md
+npm run test-analyze                 # run analysis pipeline on a commit SHA (no publish)
+```
+
+All scripts use `tsx --env-file=.env.local` — local env vars live in `.env.local`.
+This is an ESM project (`"type": "module"` in package.json). All internal imports use `.js` extensions per NodeNext resolution.
 
 ---
 
@@ -490,12 +507,15 @@ Buffer:   5xx → withRetry(); 401 → BufferTokenExpiredError; 429 → store as
 
 ## How to Start a New Session
 
+The MVP is fully implemented — all 34 source files, 3 workflows, and 3 scripts exist.
+
 1. Read this file fully
 2. Read `content-generator-v2.md` for the module system design
-3. Run `ls src/` to see what exists before writing anything
-4. Follow MVP Build Order above — start with config and voice storage
-5. When implementing a module, test it standalone via `scripts/test-analyze.ts`
+3. Run `ls src/` to see what exists before modifying anything
+4. Run `npm run typecheck` to verify the build is clean
+5. When implementing a new module, test it standalone via `npm run test-analyze`
+6. No test suite exists yet — vitest is configured but no `.test.ts` files have been written
 
 ---
 
-*Architecture locked. Ready to build.*
+*Architecture locked. MVP complete.*

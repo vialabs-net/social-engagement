@@ -10,13 +10,16 @@ github:
     - "\\[skip\\]"
   max_commits_per_push: 1                    # process at most N commits per push event
 
+buffer:
+  organization_id: ""                        # from: buffer.com → Settings → Organizations
+
 platforms:
   linkedin:
     enabled: true
-    buffer_profile_id: ""                    # from: npm run setup-buffer
+    buffer_profile_id: ""                    # from: npm run setup-buffer (for voice loop)
   instagram:
     enabled: true
-    buffer_profile_id: ""                    # from: npm run setup-buffer
+    buffer_profile_id: ""                    # from: npm run setup-buffer (for voice loop)
 
 scheduling:
   timezone: "America/Santiago"               # IANA — handles CLT/CLST DST automatically

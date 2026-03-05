@@ -25,6 +25,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Write config
+        run: echo "$CONFIG_YAML" > config.yaml
+        env:
+          CONFIG_YAML: ${{ secrets.CONFIG_YAML }}
+
       - name: Run poll and generate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -37,7 +37,7 @@ export interface UpdatePublishedInput {
 export interface UpdateScheduledInput {
   id: string;
   buffer_post_id: string;
-  scheduled_at: string;
+  scheduled_at: string | null;
   status: PostStatus;
 }
 
@@ -68,6 +68,9 @@ export interface IVoiceStorage {
 
   /** Get all posts with status='queued' for a given platform. */
   getQueuedPosts(platform: Platform): Promise<VoicePost[]>;
+
+  /** Get scheduled posts that haven't been matched to a published post yet (for voice loop). */
+  getScheduledUnpublished(platform: Platform): Promise<VoicePost[]>;
 
   /** Claim a scheduling slot atomically. Returns false if slot already taken. */
   claimSlot(slot: SlottedPost): Promise<boolean>;
