@@ -1,0 +1,39 @@
+author:
+  github_username: "yourusername"
+  name: "Your Name"
+  website: "https://yoursite.com"           # appears in LinkedIn CTAs
+
+github:
+  exclude_repos: []                          # list of repo names to skip, e.g. ["my-private-notes"]
+  exclude_patterns:
+    - "^(wip|temp|fixup!|squash!)"
+    - "\\[skip\\]"
+  max_commits_per_push: 1                    # process at most N commits per push event
+
+buffer:
+  organization_id: ""                        # from: buffer.com → Settings → Organizations
+
+platforms:
+  linkedin:
+    enabled: true
+    buffer_profile_id: ""                    # from: npm run setup-buffer (for voice loop)
+  instagram:
+    enabled: true
+    buffer_profile_id: ""                    # from: npm run setup-buffer (for voice loop)
+
+scheduling:
+  timezone: "America/Santiago"               # IANA — handles CLT/CLST DST automatically
+  window_start_hour: 8                       # 8:00 AM local time
+  window_end_hour: 19                        # 7:00 PM local time (hard cutoff)
+  daily_slots: [8, 12, 17]                   # hours in local time: 8am, 12pm, 5pm
+
+posting:
+  poll_interval_hours: 4
+  interesting_min_lines: 10                  # min changed lines to be considered
+  voice_examples_count: 5                    # top N published posts sent to Claude
+  max_pending_drafts: 10                     # Buffer queue depth limit
+  analysis_top_n: 3                          # top N findings passed to Claude
+
+ai:
+  model: "claude-sonnet-4-6"
+  max_tokens: 1600

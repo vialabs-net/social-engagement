@@ -1,0 +1,84 @@
+import { logger } from '../utils/logger.js';
+import { computeEditRatio } from '../voice/similarity.js';
+import type { BufferClient } from './client.js';
+import type { IVoiceStorage, Platform } from '../voice/storage.js';
+import type { Config } from '../config/schema.js';
+
+const MATCH_THRESHOLD = 0.3;  // min similarity to count as a match
+
+/**
+ * Polls Buffer's "sent" feed and updates voice history for newly published posts.
+ *
+ * Because posts are created as Buffer Ideas (not scheduled posts), the published
+ * post ID differs from the stored buffer_post_id (idea ID). Matching is done by
+ * text similarity between the sent post text and the stored ai_draft.
+ */
+export async function scanSentPosts(
+  bufferClient: BufferClient,
+  storage: IVoiceStorage,
+  config: Config,
+): Promise<void> {
+  const platforms: { platform: Platform; profileId: string }[] = [];
+
+  if (config.platforms.linkedin.enabled && config.platforms.linkedin.buffer_profile_id) {
+    platforms.push({ platform: 'linkedin', profileId: config.platforms.linkedin.buffer_profile_id });
+  }
+  if (config.platforms.instagram.enabled && config.platforms.instagram.buffer_profile_id) {
+    platforms.push({ platform: 'instagram', profileId: config.platforms.instagram.buffer_profile_id });
+  }
+
+  for (const { platform, profileId } of platforms) {
+    logger.info('sent_scanner.start', { platform });
+    await scanPlatform(bufferClient, storage, platform, profileId);
+  }
+}
+
+async function scanPlatform(
+  bufferClient: BufferClient,
+  storage: IVoiceStorage,
+  platform: Platform,
+  profileId: string,
+): Promise<void> {
+  const [sentPosts, unmatched] = await Promise.all([
+    bufferClient.getSentPosts(profileId),
+    storage.getScheduledUnpublished(platform),
+  ]);
+
+  if (sentPosts.length === 0 || unmatched.length === 0) {
+    logger.info('sent_scanner.nothing_to_match', { platform, sentCount: sentPosts.length, draftCount: unmatched.length });
+    return;
+  }
+
+  let matched = 0;
+
+  for (const sentPost of sentPosts) {
+    let bestScore = 0;
+    let bestDraft: (typeof unmatched)[number] | null = null;
+
+    for (const draft of unmatched) {
+      const score = computeEditRatio(draft.ai_draft, sentPost.text);
+      if (score > bestScore) {
+        bestScore = score;
+        bestDraft = draft;
+      }
+    }
+
+    if (bestDraft && bestScore >= MATCH_THRESHOLD) {
+      const publishedAt = new Date(sentPost.scheduled_at * 1000).toISOString();
+      await storage.updatePublished({
+        id: bestDraft.id,
+        published: sentPost.text,
+        edit_ratio: bestScore,
+        published_at: publishedAt,
+      });
+      logger.info('sent_scanner.matched', {
+        draftId: bestDraft.id,
+        editRatio: bestScore.toFixed(2),
+        platform,
+      });
+      matched++;
+    }
+  }
+
+  logger.info('sent_scanner.done', { platform, scanned: sentPosts.length, matched });
+}
