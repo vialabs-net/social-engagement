@@ -27,9 +27,11 @@ export async function scanSentPosts(
     platforms.push({ platform: 'instagram', profileId: config.platforms.instagram.buffer_profile_id });
   }
 
+  const orgId = config.buffer.organization_id;
+
   for (const { platform, profileId } of platforms) {
     logger.info('sent_scanner.start', { platform });
-    await scanPlatform(bufferClient, storage, platform, profileId);
+    await scanPlatform(bufferClient, storage, platform, orgId, profileId);
   }
 }
 
@@ -37,10 +39,11 @@ async function scanPlatform(
   bufferClient: BufferClient,
   storage: IVoiceStorage,
   platform: Platform,
-  profileId: string,
+  orgId: string,
+  channelId: string,
 ): Promise<void> {
   const [sentPosts, unmatched] = await Promise.all([
-    bufferClient.getSentPosts(profileId),
+    bufferClient.getSentPosts(orgId, channelId),
     storage.getScheduledUnpublished(platform),
   ]);
 
@@ -64,7 +67,7 @@ async function scanPlatform(
     }
 
     if (bestDraft && bestScore >= MATCH_THRESHOLD) {
-      const publishedAt = new Date(sentPost.scheduled_at * 1000).toISOString();
+      const publishedAt = sentPost.createdAt;
       await storage.updatePublished({
         id: bestDraft.id,
         published: sentPost.text,

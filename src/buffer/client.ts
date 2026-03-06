@@ -1,7 +1,6 @@
 import { withRetry, BUFFER_RETRY_POLICY } from '../utils/retry.js';
 
 const BUFFER_GRAPHQL = 'https://api.buffer.com';
-const BUFFER_REST = 'https://api.bufferapp.com/1';
 
 export class BufferTokenExpiredError extends Error {
   constructor() {
@@ -13,8 +12,7 @@ export class BufferTokenExpiredError extends Error {
 export interface BufferPost {
   id: string;
   text: string;
-  scheduled_at: number;  // Unix timestamp
-  status: string;
+  createdAt: string;  // ISO 8601 timestamp from GraphQL
 }
 
 export class BufferClient {
@@ -77,27 +75,52 @@ export class BufferClient {
     }, BUFFER_RETRY_POLICY, 'buffer.createIdea');
   }
 
-  // ─── REST (read-only, for voice loop) ──────────────────────────────────────
+  // ─── GraphQL (read-only, for voice loop) ───────────────────────────────────
 
-  async getSentPosts(profileId: string, page = 1): Promise<BufferPost[]> {
+  async getSentPosts(orgId: string, channelId: string): Promise<BufferPost[]> {
     return withRetry(async () => {
-      const params = new URLSearchParams({
-        access_token: this.token,
-        page: String(page),
+      const response = await fetch(BUFFER_GRAPHQL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: `
+            query GetSentPosts($input: PostsInput!, $first: Int) {
+              posts(input: $input, first: $first) {
+                edges {
+                  node { id text createdAt }
+                }
+              }
+            }
+          `,
+          variables: {
+            input: {
+              organizationId: orgId,
+              filter: { status: ['sent'], channelIds: [channelId] },
+            },
+            first: 20,
+          },
+        }),
       });
-      const response = await fetch(
-        `${BUFFER_REST}/profiles/${profileId}/updates/sent.json?${params}`,
-        { method: 'GET' },
-      );
+
       if (response.status === 401) throw new BufferTokenExpiredError();
       if (!response.ok) {
         const body = await response.text().catch(() => '');
-        const err = new Error(`Buffer REST error ${response.status}: ${body}`);
-        (err as unknown as { status: number }).status = response.status;
-        throw err;
+        throw new Error(`Buffer GraphQL error ${response.status}: ${body}`);
       }
-      const data = await response.json() as { updates?: BufferPost[] };
-      return data.updates ?? [];
+
+      const json = await response.json() as {
+        data?: { posts?: { edges?: Array<{ node: BufferPost }> } };
+        errors?: Array<{ message: string }>;
+      };
+
+      if (json.errors?.length) {
+        throw new Error(`Buffer GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
+      }
+
+      return json.data?.posts?.edges?.map((e) => e.node) ?? [];
     }, BUFFER_RETRY_POLICY, 'buffer.getSentPosts');
   }
 }
