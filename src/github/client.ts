@@ -34,6 +34,26 @@ export class GitHubClient {
     }, GITHUB_RETRY_POLICY, 'github.listUserEvents');
   }
 
+  async compareCommits(
+    owner: string,
+    repo: string,
+    base: string,
+    head: string,
+  ): Promise<{ sha: string; message: string }[]> {
+    return withRetry(async () => {
+      const response = await this.octokit.repos.compareCommits({
+        owner,
+        repo,
+        base,
+        head,
+      });
+      return response.data.commits.map((c) => ({
+        sha: c.sha,
+        message: c.commit.message,
+      }));
+    }, GITHUB_RETRY_POLICY, `github.compareCommits(${owner}/${repo}@${base}...${head})`);
+  }
+
   async getCommit(owner: string, repo: string, sha: string): Promise<unknown> {
     return withRetry(async () => {
       const response = await this.octokit.repos.getCommit({ owner, repo, ref: sha });
