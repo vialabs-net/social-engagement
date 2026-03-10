@@ -8,7 +8,7 @@ github:
   exclude_patterns:
     - "^(wip|temp|fixup!|squash!)"
     - "\\[skip\\]"
-  max_commits_per_push: 1                    # process at most N commits per push event
+  max_commits_per_push: 4                    # process at most N commits per push event
 
 buffer:
   organization_id: ""                        # from: buffer.com → Settings → Organizations
