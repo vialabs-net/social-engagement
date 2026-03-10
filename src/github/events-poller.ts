@@ -22,10 +22,12 @@ interface EventsState {
 interface RawEvent {
   id: string;
   type: string;
+  actor: { login: string };
   repo: { name: string };
   payload: {
-    commits?: Array<{ sha: string; message: string; author?: { username?: string } }>;
-    head_commit?: { author?: { username?: string } };
+    before?: string;
+    head?: string;
+    ref?: string;
   };
   created_at: string;
 }
@@ -33,6 +35,9 @@ interface RawEvent {
 /**
  * Polls GitHub's user events API and returns new PushEvents since the last run.
  * Uses ETag conditional requests — a 304 Not Modified costs 0 API rate-limit points.
+ *
+ * GitHub's Events API no longer includes commits in PushEvent payloads.
+ * We use the Compare API (before...head) to fetch the actual commits.
  */
 export async function pollNewPushEvents(
   client: GitHubClient,
@@ -51,11 +56,11 @@ export async function pollNewPushEvents(
   }
 
   const rawEvents = events as RawEvent[];
-  const pushEvents = rawEvents.filter(e => e.type === 'PushEvent');
+  const pushEvents = rawEvents.filter((e) => e.type === 'PushEvent');
 
   // Find new events since last seen
   const lastSeenIdx = state.lastEventId
-    ? pushEvents.findIndex(e => e.id === state.lastEventId)
+    ? pushEvents.findIndex((e) => e.id === state.lastEventId)
     : pushEvents.length; // treat all as new if no state
 
   const newPushEvents = lastSeenIdx > 0 ? pushEvents.slice(0, lastSeenIdx) : pushEvents;
@@ -67,20 +72,37 @@ export async function pollNewPushEvents(
     newEvents: newPushEvents.length,
   });
 
-  const result: PushEvent[] = newPushEvents.map(e => {
-    const commits = (e.payload.commits ?? []).slice(0, maxCommitsPerPush).map(c => ({
-      sha: c.sha,
-      message: c.message,
-      authorLogin: c.author?.username ?? username,
-    }));
+  const result: PushEvent[] = [];
 
-    return {
+  for (const e of newPushEvents) {
+    const [owner, repo] = e.repo.name.split('/');
+    if (!owner || !repo || !e.payload.before || !e.payload.head) continue;
+
+    let commits: PushCommit[];
+    try {
+      const compared = await client.compareCommits(owner, repo, e.payload.before, e.payload.head);
+      commits = compared.slice(0, maxCommitsPerPush).map((c) => ({
+        sha: c.sha,
+        message: c.message,
+        authorLogin: e.actor.login,
+      }));
+    } catch (err) {
+      logger.warn('events.poll.compare_failed', {
+        repo: e.repo.name,
+        error: String(err),
+      });
+      continue;
+    }
+
+    if (commits.length === 0) continue;
+
+    result.push({
       id: e.id,
       repo: e.repo.name,
       commits,
       pushedAt: e.created_at,
-    };
-  });
+    });
+  }
 
   const newState: EventsState = {
     lastEventId: rawEvents[0]?.id ?? state.lastEventId,

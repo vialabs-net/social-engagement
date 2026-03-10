@@ -23,7 +23,7 @@ npm run typecheck                    # tsc --noEmit (strict mode, no any)
 npm test                             # vitest run (no test files yet)
 npm run poll                         # run poll-and-generate pipeline locally
 npm run scan                         # run sent-post scanner locally
-npm run setup-buffer                 # list Buffer channels with profile IDs
+npm run setup-buffer                 # verify Buffer token + print org/profile ID instructions
 npm run bootstrap                    # seed voice history from voice-bootstrap.md
 npm run test-analyze                 # run analysis pipeline on a commit SHA (no publish)
 ```
@@ -41,19 +41,19 @@ This is an ESM project (`"type": "module"` in package.json). All internal import
 2. **Specialized modular analysis**: Multiple focused modules analyze code before Claude is called.
    Claude translates findings — it does NOT analyze code. Modules do.
 
-3. **Buffer is the review interface**: Posts go directly to Buffer as scheduled drafts.
+3. **Buffer is the review interface**: Posts go to Buffer as Ideas (via GraphQL API).
    Liliana edits in Buffer's native UI and publishes when ready. No GitHub Issues /approve flow.
 
 4. **Voice training loop**: After Liliana publishes from Buffer, the sent-post scanner captures
    the final published text, computes edit_ratio, and stores it as a voice history example.
 
-5. **Posting window**: Posts scheduled ONLY between 8:00 AM and 7:00 PM Chile time
-   (America/Santiago). Architecturally enforced via slot-manager.ts — not just configured.
+5. **Posting window**: Configured for 8:00 AM – 7:00 PM Chile time (America/Santiago).
+   `slot-manager.ts` is implemented but not yet wired into the pipeline — see Known Gaps.
 
 6. **Free tiers only**: GitHub Actions (public repo = unlimited), Buffer (free), Supabase (free).
    Only Anthropic Claude API costs money — minimize aggressively.
 
-7. **Human review required**: No auto-publish path exists. Buffer holds all posts as drafts/scheduled.
+7. **Human review required**: No auto-publish path exists. Buffer Ideas require manual review.
 
 ---
 
@@ -61,10 +61,10 @@ This is an ESM project (`"type": "module"` in package.json). All internal import
 
 ```
 [CRON every 4h — poll-and-generate.yml]
-GitHub Events API → Commit Enrichment → Module Pipeline → Claude → Buffer (draft)
+GitHub Events API → Commit Enrichment → Module Pipeline → Claude → Buffer (Idea)
 
 [CRON every 2h — scan-sent-posts.yml]
-Buffer "sent" API → Match buffer_post_id → computeEditRatio → Voice History
+Buffer "sent" API → Match by text similarity → computeEditRatio → Voice History
 ```
 
 These two crons are kept separate for independent debuggability.
@@ -87,7 +87,7 @@ These two crons are kept separate for independent debuggability.
 │
 ├── utils/commit-filter.ts (ZERO API COST — rule-based)
 │   └── isInteresting(): lines >= 10, not merge/bot/wip/excluded
-│       NOT interesting → pending_batch table (weekly roundup later)
+│       NOT interesting → skipped (pending_batch write not yet implemented)
 │       IS interesting → analysis pipeline
 │
 ├── analysis/pipeline.ts (ALL modules run IN PARALLEL)
@@ -109,17 +109,13 @@ These two crons are kept separate for independent debuggability.
 ├── ai/post-generator.ts
 │   └── claude-sonnet-4-6, max_tokens=1600
 │       ONE call per commit (never per-module)
-│       Returns: { linkedin: string, instagram: string }
+│       Response parsed via XML tags: <linkedin_draft> and <instagram_draft>
 │       Store ai_draft immediately in DB
 │
-├── scheduling/slot-manager.ts
-│   └── Next available slot within 8am-7pm CLT
-│       Atomic claim via UNIQUE(platform, scheduled_at) in DB
-│
 ├── buffer/publisher.ts
-│   ├── Check queue depth (≥9 → store as 'queued', drain on next run)
-│   ├── POST /1/updates/create.json with scheduled_at (UTC Unix timestamp)
-│   └── Store: buffer_post_id, scheduled_at, status='scheduled'
+│   └── GraphQL mutation: createIdea (Buffer Ideas API)
+│       Creates an Idea per platform → appears in Buffer Ideas inbox
+│       Store: buffer_post_id (Idea ID), status='scheduled'
 │
 └── review/notifier.ts
     └── Open GitHub Issue (NOTIFICATION ONLY — no /approve needed)
@@ -130,7 +126,8 @@ These two crons are kept separate for independent debuggability.
 │
 └── buffer/sent-scanner.ts
     ├── GET /1/profiles/{id}/updates/sent.json (per platform)
-    ├── Match by buffer_post_id → voice_posts in DB
+    ├── Match by text similarity (computeEditRatio >= 0.3 threshold)
+    │   (Idea IDs differ from published post IDs — can't match by ID)
     └── For each newly sent post:
         ├── Fetch final text from Buffer response
         ├── computeEditRatio(ai_draft, published_text) → 0.0–1.0
@@ -225,11 +222,10 @@ optional before/after evidence.
 **Window**: 8:00 AM – 7:00 PM CLT (19:00 hard cutoff)
 **Daily slots**: [8, 12, 17] hours CLT → 8am, 12pm, 5pm
 
-`slot-manager.ts` computes the next unclaimed slot → converts to UTC Unix timestamp →
-passes to Buffer's `scheduled_at` field. Posting outside the window is structurally impossible.
-
-The `UNIQUE(platform, scheduled_at)` constraint in the `scheduled_slots` table prevents
-double-booking atomically even if two workflow runs race.
+`slot-manager.ts` is fully implemented with atomic slot claiming via
+`UNIQUE(platform, scheduled_at)` in the `scheduled_slots` table. However, it is **not yet
+wired into the pipeline** — `publisher.ts` creates Buffer Ideas directly without scheduling.
+Slot-based scheduling will be needed if the pipeline moves from Ideas to scheduled posts.
 
 ---
 
@@ -247,14 +243,13 @@ double-booking atomically even if two workflow runs race.
 ### Buffer API
 **Auth**: `BUFFER_ACCESS_TOKEN` — long-lived OAuth token
 **Free tier**: 3 channels, 10 posts queued per channel
-**Key endpoints**:
-- `GET /1/profiles.json` — list channels with profile IDs
-- `GET /1/profiles/{id}/updates/pending.json` — check queue depth before publishing
-- `POST /1/updates/create.json` — add post with `scheduled_at`
+**Actual endpoints used**:
+- GraphQL (`https://graph.buffer.com/`) — `createIdea` mutation to create Ideas
 - `GET /1/profiles/{id}/updates/sent.json` — scan for published posts (voice loop)
 
-**Queue management**: Check depth before publishing. If ≥9, store `review_status='queued'`.
-Drain queued posts at start of every cron run.
+**How it works**: `publisher.ts` creates Buffer Ideas via GraphQL (not scheduled posts via REST).
+Ideas land in Buffer's Ideas inbox for manual review and publishing. The `setup-buffer.ts`
+script verifies token validity and prints instructions for finding `organization_id` and profile IDs.
 
 **Token expiry**: `401` → throw `BufferTokenExpiredError`. Regenerate at buffer.com → Settings → Apps.
 
@@ -335,6 +330,9 @@ github:
     - "\\[skip\\]"
   max_commits_per_push: 1
 
+buffer:
+  organization_id: ""                    # REQUIRED — get from setup-buffer script
+
 platforms:
   linkedin:
     enabled: true
@@ -393,13 +391,13 @@ devcast/
 │   ├── ai/
 │   │   ├── client.ts                # Anthropic SDK (sonnet, max_tokens=1600)
 │   │   ├── prompt-builder.ts        # voice top + commit + findings + task bottom
-│   │   └── post-generator.ts        # ONE call per commit, cache draft, parse JSON
+│   │   └── post-generator.ts        # ONE call per commit, cache draft, parse XML tags
 │   ├── buffer/
-│   │   ├── client.ts                # Buffer REST wrapper
-│   │   ├── publisher.ts             # queue check + slot scheduling + POST
-│   │   └── sent-scanner.ts          # poll sent posts → voice history feedback
+│   │   ├── client.ts                # Buffer GraphQL + REST wrapper
+│   │   ├── publisher.ts             # createIdea GraphQL mutation → Buffer Ideas
+│   │   └── sent-scanner.ts          # poll sent posts → text similarity match → voice history
 │   ├── scheduling/
-│   │   └── slot-manager.ts          # America/Santiago 8am-7pm, atomic slot claiming
+│   │   └── slot-manager.ts          # America/Santiago 8am-7pm (implemented, not yet wired)
 │   ├── voice/
 │   │   ├── storage.ts               # IVoiceStorage interface
 │   │   ├── supabase-storage.ts      # production
@@ -415,9 +413,8 @@ devcast/
 │       ├── retry.ts                 # withRetry() per-service policies
 │       └── commit-filter.ts         # isInteresting() — rule-based, zero API cost
 ├── scripts/
-│   ├── setup-buffer.ts              # list Buffer channels with IDs
+│   ├── setup-buffer.ts              # verify Buffer token + print org/profile instructions
 │   ├── bootstrap-voice.ts           # seed DB from voice-bootstrap.md
-│   ├── manage-voice.ts              # inspect/delete voice history
 │   └── test-analyze.ts              # run module pipeline on any commit SHA
 ├── database/
 │   └── schema.sql
@@ -462,7 +459,8 @@ Build in this sequence — each layer depends on the previous:
 
 1. **Fork** → Settings → Actions → "Allow all actions and reusable workflows"
 2. **Supabase**: supabase.com → New project → SQL Editor → run `database/schema.sql`
-3. **Secrets**: Settings → Secrets → Actions → add all env vars from `.env.example`
+3. **Secrets**: Settings → Secrets → Actions → add: `ANTHROPIC_API_KEY`, `BUFFER_ACCESS_TOKEN`,
+   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CONFIG_YAML` (entire config.yaml content)
 4. **Config**: `cp config.example.yaml config.yaml` → set `author.github_username`
 5. **Buffer profiles**: `npm install && npm run setup-buffer` → paste profile IDs
 6. **Voice bootstrap**: Edit `voice-bootstrap.md` with 3–5 posts in your actual voice
@@ -481,15 +479,34 @@ Buffer:   5xx → withRetry(); 401 → BufferTokenExpiredError; 429 → store as
 
 ---
 
-## Coding Conventions
+## Known Gaps (Not Yet Implemented)
 
-- **No `any`** — use `unknown` and narrow, or define proper types
-- **No silent failures** — every catch either rethrows or logs + rethrows
-- **Interfaces for data shapes** — classes for stateful services (modules, clients)
-- **Dependency injection** — pass `IVoiceStorage` to consumers, never import a singleton
-- **One file per concern**
-- **No magic strings** — `const STATUS = { PENDING: 'pending', SCHEDULED: 'scheduled' } as const`
-- Comments only where logic isn't self-evident
+1. **`events_state` in Supabase**: `SupabaseStorage` does not implement `getEventsState`/`setEventsState`.
+   In production, `last_event_id` is always `null` — the poll processes events as if starting fresh each run.
+   Only `SqliteStorage` persists event state between runs.
+
+2. **`pending_batch` writes**: `isInteresting()` returning false just skips the commit.
+   Nothing writes to the `pending_batch` table — weekly roundup feature is unimplemented.
+
+3. **`slot-manager.ts` unused**: Fully implemented but never called from `publisher.ts` or `main-poll.ts`.
+   Will be needed if moving from Buffer Ideas to scheduled posts.
+
+4. **`manage-voice.ts` script**: Referenced in earlier designs but never created.
+
+5. **`diff` package unused**: Listed in `package.json` dependencies but never imported in source code.
+
+---
+
+## Storage Backend Selection
+
+Storage is selected by the **presence of `SUPABASE_URL`** env var — not by `USE_SQLITE`:
+```typescript
+const storage: IVoiceStorage = process.env['SUPABASE_URL']
+  ? new SupabaseStorage(...)
+  : new SqliteStorage(process.env['SQLITE_PATH'] ?? 'data/devcast.db');
+```
+Both `main-poll.ts` and `main-scan.ts` use this pattern. The `USE_SQLITE` env var in `.env.example`
+is a comment suggestion that is not checked in code.
 
 ---
 
@@ -502,6 +519,8 @@ Buffer:   5xx → withRetry(); 401 → BufferTokenExpiredError; 429 → store as
 5. **Supabase inactivity pause**: 4h cron + keepalive query prevents in normal use
 6. **Buffer token manual rotation**: Unavoidable without a running OAuth server
 7. **Chile DST**: `date-fns-tz` + `America/Santiago` IANA handles this. Never hardcode UTC offset.
+8. **Sent scanner text matching**: Uses similarity threshold (0.3) instead of ID matching because
+   Buffer Idea IDs differ from published post IDs. Posts rewritten >70% won't match.
 
 ---
 
