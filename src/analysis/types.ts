@@ -5,7 +5,8 @@ export type AnalysisCategory =
   | 'type_system'
   | 'integration'
   | 'testing'
-  | 'ai_assisted';
+  | 'ai_assisted'
+  | 'performance';
 
 export interface FileDiff {
   filename: string;

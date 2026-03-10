@@ -16,6 +16,7 @@ import { TypeSystemModule }      from './type-system.js';
 import { IntegrationModule }     from './integration.js';
 import { TestingModule }         from './testing.js';
 import { AiAssistedModule }      from './ai-assisted.js';
+import { PerformanceModule }     from './performance.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -25,4 +26,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new IntegrationModule(),
   new TestingModule(),
   new AiAssistedModule(),
+  new PerformanceModule(),
 ];
