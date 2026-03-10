@@ -22,9 +22,13 @@ export class BufferClient {
     this.token = token;
   }
 
-  // ─── GraphQL (mutations) ────────────────────────────────────────────────────
+  // ─── Shared GraphQL transport ─────────────────────────────────────────────
 
-  async createIdea(orgId: string, title: string, text: string): Promise<{ id: string }> {
+  private async graphqlRequest<T>(
+    query: string,
+    variables: Record<string, unknown>,
+    operationName: string,
+  ): Promise<T> {
     return withRetry(async () => {
       const response = await fetch(BUFFER_GRAPHQL, {
         method: 'POST',
@@ -32,22 +36,7 @@ export class BufferClient {
           'Authorization': `Bearer ${this.token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          query: `
-            mutation CreateIdea($input: CreateIdeaInput!) {
-              createIdea(input: $input) {
-                ... on Idea { id }
-                ... on MutationError { message }
-              }
-            }
-          `,
-          variables: {
-            input: {
-              organizationId: orgId,
-              content: { title, text },
-            },
-          },
-        }),
+        body: JSON.stringify({ query, variables }),
       });
 
       if (response.status === 401) throw new BufferTokenExpiredError();
@@ -57,7 +46,7 @@ export class BufferClient {
       }
 
       const json = await response.json() as {
-        data?: { createIdea?: { id?: string; message?: string } };
+        data?: T;
         errors?: Array<{ message: string }>;
       };
 
@@ -65,62 +54,63 @@ export class BufferClient {
         throw new Error(`Buffer GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
       }
 
-      const result = json.data?.createIdea;
-      if (!result?.id) {
-        const msg = (result as { message?: string } | undefined)?.message ?? 'unknown error';
-        throw new Error(`Buffer createIdea failed: ${msg}`);
-      }
-
-      return { id: result.id };
-    }, BUFFER_RETRY_POLICY, 'buffer.createIdea');
+      return json.data as T;
+    }, BUFFER_RETRY_POLICY, operationName);
   }
 
-  // ─── GraphQL (read-only, for voice loop) ───────────────────────────────────
+  // ─── Mutations ────────────────────────────────────────────────────────────
+
+  async createIdea(orgId: string, title: string, text: string): Promise<{ id: string }> {
+    const data = await this.graphqlRequest<{
+      createIdea?: { id?: string; message?: string };
+    }>(
+      `mutation CreateIdea($input: CreateIdeaInput!) {
+        createIdea(input: $input) {
+          ... on Idea { id }
+          ... on MutationError { message }
+        }
+      }`,
+      {
+        input: {
+          organizationId: orgId,
+          content: { title, text },
+        },
+      },
+      'buffer.createIdea',
+    );
+
+    const result = data.createIdea;
+    if (!result?.id) {
+      const msg = (result as { message?: string } | undefined)?.message ?? 'unknown error';
+      throw new Error(`Buffer createIdea failed: ${msg}`);
+    }
+
+    return { id: result.id };
+  }
+
+  // ─── Queries (read-only, for voice loop) ──────────────────────────────────
 
   async getSentPosts(orgId: string, channelId: string): Promise<BufferPost[]> {
-    return withRetry(async () => {
-      const response = await fetch(BUFFER_GRAPHQL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
+    const data = await this.graphqlRequest<{
+      posts?: { edges?: Array<{ node: BufferPost }> };
+    }>(
+      `query GetSentPosts($input: PostsInput!, $first: Int) {
+        posts(input: $input, first: $first) {
+          edges {
+            node { id text createdAt }
+          }
+        }
+      }`,
+      {
+        input: {
+          organizationId: orgId,
+          filter: { status: ['sent'], channelIds: [channelId] },
         },
-        body: JSON.stringify({
-          query: `
-            query GetSentPosts($input: PostsInput!, $first: Int) {
-              posts(input: $input, first: $first) {
-                edges {
-                  node { id text createdAt }
-                }
-              }
-            }
-          `,
-          variables: {
-            input: {
-              organizationId: orgId,
-              filter: { status: ['sent'], channelIds: [channelId] },
-            },
-            first: 20,
-          },
-        }),
-      });
+        first: 20,
+      },
+      'buffer.getSentPosts',
+    );
 
-      if (response.status === 401) throw new BufferTokenExpiredError();
-      if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`Buffer GraphQL error ${response.status}: ${body}`);
-      }
-
-      const json = await response.json() as {
-        data?: { posts?: { edges?: Array<{ node: BufferPost }> } };
-        errors?: Array<{ message: string }>;
-      };
-
-      if (json.errors?.length) {
-        throw new Error(`Buffer GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
-      }
-
-      return json.data?.posts?.edges?.map((e) => e.node) ?? [];
-    }, BUFFER_RETRY_POLICY, 'buffer.getSentPosts');
+    return data.posts?.edges?.map((e) => e.node) ?? [];
   }
 }
