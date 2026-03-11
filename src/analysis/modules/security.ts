@@ -43,7 +43,7 @@ const PATTERNS: readonly SecurityPattern[] = [
     technicalDetail: 'Input validation — schema-based validation at system boundaries to reject malformed data before it reaches business logic.',
     explanation: 'Validating input at the boundary catches bad data early. A Zod schema or validator middleware rejects invalid requests before they touch the database or trigger unexpected behavior.',
     detect: (lines) => lines.some((l) =>
-      /\b(z\.object\(|z\.string\(|z\.number\(|Joi\.|joi\.|\.validate\(|express-validator|sanitize|\.safeParse\(|\.parse\()/.test(l),
+      /\b(z\.object\(|z\.string\(|z\.number\(|Joi\.|joi\.|\.validate\(|express-validator|sanitize|\.safeParse\(|schema\.parse\()/.test(l),
     ),
   },
   {

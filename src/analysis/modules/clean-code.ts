@@ -10,7 +10,7 @@ export class CleanCodeModule implements CodeAnalyzer {
 
   async analyze(ctx: AnalysisContext): Promise<Finding | null> {
     for (const diff of ctx.diffs) {
-      if (!diff.patch) continue;
+      if (!diff.patch || diff.status === 'removed') continue;
 
       const totalBefore = diff.deletions;
       const totalAfter = diff.additions;
