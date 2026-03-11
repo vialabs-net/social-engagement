@@ -5,7 +5,17 @@ export type AnalysisCategory =
   | 'type_system'
   | 'integration'
   | 'testing'
-  | 'ai_assisted';
+  | 'ai_assisted'
+  | 'performance'
+  | 'security'
+  | 'api_design'
+  | 'error_resilience'
+  | 'observability'
+  | 'concurrency'
+  | 'dx'
+  | 'dependency_health'
+  | 'evolutionary'
+  | 'js_advanced';
 
 export interface FileDiff {
   filename: string;

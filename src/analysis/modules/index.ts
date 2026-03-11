@@ -16,6 +16,16 @@ import { TypeSystemModule }      from './type-system.js';
 import { IntegrationModule }     from './integration.js';
 import { TestingModule }         from './testing.js';
 import { AiAssistedModule }      from './ai-assisted.js';
+import { PerformanceModule }     from './performance.js';
+import { SecurityModule }        from './security.js';
+import { ApiDesignModule }       from './api-design.js';
+import { ErrorResilienceModule } from './error-resilience.js';
+import { ObservabilityModule }   from './observability.js';
+import { ConcurrencyModule }    from './concurrency.js';
+import { DxModule }              from './dx.js';
+import { DependencyHealthModule } from './dependency-health.js';
+import { EvolutionaryModule }    from './evolutionary.js';
+import { JsAdvancedModule }      from './js-advanced.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -25,4 +35,14 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new IntegrationModule(),
   new TestingModule(),
   new AiAssistedModule(),
+  new PerformanceModule(),
+  new SecurityModule(),
+  new ApiDesignModule(),
+  new ErrorResilienceModule(),
+  new ObservabilityModule(),
+  new ConcurrencyModule(),
+  new DxModule(),
+  new DependencyHealthModule(),
+  new EvolutionaryModule(),
+  new JsAdvancedModule(),
 ];
