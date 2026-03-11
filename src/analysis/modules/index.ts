@@ -24,6 +24,7 @@ import { ObservabilityModule }   from './observability.js';
 import { ConcurrencyModule }    from './concurrency.js';
 import { DxModule }              from './dx.js';
 import { DependencyHealthModule } from './dependency-health.js';
+import { EvolutionaryModule }    from './evolutionary.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -41,4 +42,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ConcurrencyModule(),
   new DxModule(),
   new DependencyHealthModule(),
+  new EvolutionaryModule(),
 ];

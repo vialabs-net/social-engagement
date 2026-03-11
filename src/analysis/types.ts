@@ -13,7 +13,8 @@ export type AnalysisCategory =
   | 'observability'
   | 'concurrency'
   | 'dx'
-  | 'dependency_health';
+  | 'dependency_health'
+  | 'evolutionary';
 
 export interface FileDiff {
   filename: string;
