@@ -58,8 +58,12 @@ export function isInteresting(
 
   // Skip commits matching user-configured exclude patterns
   for (const pattern of config.excludePatterns) {
-    if (new RegExp(pattern).test(commit.message)) {
-      return { interesting: false, reason: `matches exclude pattern: ${pattern}` };
+    try {
+      if (new RegExp(pattern).test(commit.message)) {
+        return { interesting: false, reason: `matches exclude pattern: ${pattern}` };
+      }
+    } catch {
+      // Invalid regex in config — skip this pattern, don't crash the pipeline
     }
   }
 

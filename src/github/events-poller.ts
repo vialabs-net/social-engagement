@@ -58,12 +58,16 @@ export async function pollNewPushEvents(
   const rawEvents = events as RawEvent[];
   const pushEvents = rawEvents.filter((e) => e.type === 'PushEvent');
 
-  // Find new events since last seen
+  // Find new events since last seen.
+  // Events are in reverse chronological order (newest first).
+  // findIndex returns: -1 (not found), 0 (no new events), N (N new events before marker).
   const lastSeenIdx = state.lastEventId
     ? pushEvents.findIndex((e) => e.id === state.lastEventId)
-    : pushEvents.length; // treat all as new if no state
+    : -1; // no state = treat all as new
 
-  const newPushEvents = lastSeenIdx > 0 ? pushEvents.slice(0, lastSeenIdx) : pushEvents;
+  const newPushEvents = lastSeenIdx === -1
+    ? pushEvents                      // not found or no state: process all
+    : pushEvents.slice(0, lastSeenIdx); // 0 = empty (no new), N = first N are new
 
   logger.info('events.poll.result', {
     username,
