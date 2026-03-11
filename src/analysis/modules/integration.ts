@@ -110,6 +110,7 @@ export class IntegrationModule implements CodeAnalyzer {
           technicalDetail: `${service.name}, ${service.category}. New import/client initialization detected in the diff.`,
           plainLanguage: service.explanation,
           interestScore: service.score,
+          contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         };
       }
     }

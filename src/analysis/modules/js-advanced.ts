@@ -69,6 +69,7 @@ export class JsAdvancedModule implements CodeAnalyzer {
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
             interestScore: pattern.score,
+            contextHint: `${diff.filename} in ${ctx.repo}`,
           };
         }
       }

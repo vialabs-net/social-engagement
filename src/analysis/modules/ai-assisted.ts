@@ -68,6 +68,7 @@ export class AiAssistedModule implements CodeAnalyzer {
         technicalDetail: `${sdkName} integration. AI-assisted development, human-AI collaboration. SDK initialized in the diff.`,
         plainLanguage: `The commit adds ${sdkName} as a capability layer in the application. The interesting design decisions are usually not the SDK setup itself — it\'s the prompt structure, token budget, retry strategy, and where AI fits in the overall flow.`,
         interestScore: 8,
+        contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
       };
     }
 
@@ -80,6 +81,7 @@ export class AiAssistedModule implements CodeAnalyzer {
         technicalDetail: 'Prompt engineering, AI workflow design. Prompt files added or modified in the diff.',
         plainLanguage: 'Prompts are code. This commit adds or refines the instructions that shape how the AI behaves — the structure, constraints, examples, and task framing that turn a general model into a specialized tool.',
         interestScore: 7,
+        contextHint: `${aiFiles[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
       };
     }
 
@@ -91,6 +93,7 @@ export class AiAssistedModule implements CodeAnalyzer {
       technicalDetail: 'AI-assisted development, human-AI collaboration. Detected from commit message.',
       plainLanguage: 'The developer used AI assistance for this commit. The real story is usually the human judgment involved: what the AI wrote, what the developer changed, and why.',
       interestScore: 6,
+      contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
     };
   }
 }

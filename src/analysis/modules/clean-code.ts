@@ -29,6 +29,7 @@ export class CleanCodeModule implements CodeAnalyzer {
             technicalDetail: `KISS principle, ${usesLookup ? 'lookup table pattern, ' : ''}cognitive complexity reduction. ${totalBefore}→${totalAfter} lines (${percentReduced}% reduction).`,
             plainLanguage: `The commit made the code significantly simpler — ${percentReduced}% fewer lines with the same behavior. ${usesLookup ? 'A nested conditional tree was replaced with a lookup table, which is readable as data rather than traced as logic.' : 'The simplification reduces the cognitive load for anyone reading or modifying this code in the future.'}`,
             interestScore: Math.min(9, 5 + Math.floor(reductionRatio * 8)),
+            contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {
               before: `~${totalBefore} lines`,
               after: `~${totalAfter} lines (${percentReduced}% reduction)`,
@@ -49,6 +50,7 @@ export class CleanCodeModule implements CodeAnalyzer {
           technicalDetail: `DRY principle, single responsibility principle, extract method refactoring. ${newFunctions.length} new functions added.`,
           plainLanguage: `The commit broke a larger block of logic into ${newFunctions.length} focused functions, each with one job. Each function can now be read, tested, and changed independently.`,
           interestScore: 6,
+          contextHint: `${diff.filename} in ${ctx.repo}`,
         };
       }
     }

@@ -62,8 +62,8 @@ export class TypeSystemModule implements CodeAnalyzer {
   async analyze(ctx: AnalysisContext): Promise<Finding | null> {
     if (!ctx.languages.includes('TypeScript')) return null;
 
-    const addedText = ctx.diffs
-      .filter(d => d.language === 'TypeScript')
+    const tsDiffs = ctx.diffs.filter(d => d.language === 'TypeScript');
+    const addedText = tsDiffs
       .flatMap(d =>
         d.patch.split('\n')
           .filter(l => l.startsWith('+') && !l.startsWith('+++'))
@@ -72,6 +72,8 @@ export class TypeSystemModule implements CodeAnalyzer {
       .join('\n');
 
     if (!addedText) return null;
+
+    const primaryFile = tsDiffs[0]?.filename ?? 'unknown';
 
     for (const tp of TYPE_PATTERNS) {
       if (tp.pattern.test(addedText)) {
@@ -82,6 +84,7 @@ export class TypeSystemModule implements CodeAnalyzer {
           technicalDetail: tp.technicalDetail,
           plainLanguage: tp.explanation,
           interestScore: tp.score,
+          contextHint: `${primaryFile} in ${ctx.repo}`,
         };
       }
     }

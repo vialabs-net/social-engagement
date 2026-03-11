@@ -105,10 +105,16 @@ export class EvolutionaryModule implements CodeAnalyzer {
   readonly category = 'evolutionary' as const;
 
   async analyze(ctx: AnalysisContext): Promise<Finding | null> {
-    return detectModuleExtraction(ctx.diffs)
+    const finding = detectModuleExtraction(ctx.diffs)
       ?? detectFileRename(ctx.diffs)
       ?? detectMigration(ctx.diffs)
       ?? detectDeprecation(ctx.diffs)
       ?? detectLargeDeletion(ctx.diffs);
+
+    if (finding) {
+      finding.contextHint = `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`;
+    }
+
+    return finding;
   }
 }
