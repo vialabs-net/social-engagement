@@ -23,6 +23,7 @@ import { ErrorResilienceModule } from './error-resilience.js';
 import { ObservabilityModule }   from './observability.js';
 import { ConcurrencyModule }    from './concurrency.js';
 import { DxModule }              from './dx.js';
+import { DependencyHealthModule } from './dependency-health.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -39,4 +40,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ObservabilityModule(),
   new ConcurrencyModule(),
   new DxModule(),
+  new DependencyHealthModule(),
 ];

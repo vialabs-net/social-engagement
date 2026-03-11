@@ -12,7 +12,8 @@ export type AnalysisCategory =
   | 'error_resilience'
   | 'observability'
   | 'concurrency'
-  | 'dx';
+  | 'dx'
+  | 'dependency_health';
 
 export interface FileDiff {
   filename: string;
