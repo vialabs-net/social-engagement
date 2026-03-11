@@ -35,11 +35,14 @@ export async function generatePosts(
 
   if (platforms.length === 0) throw new Error('No platforms enabled in config');
 
-  // Retrieve voice examples for both platforms (use linkedin examples for both — shared voice)
-  const voiceExamples = await storage.getTopVoiceExamples(
-    'linkedin',
-    config.posting.voice_examples_count,
+  // Retrieve voice examples from all enabled platforms and pick top N by edit_ratio
+  const voiceResults = await Promise.all(
+    platforms.map((p) => storage.getTopVoiceExamples(p, config.posting.voice_examples_count)),
   );
+  const voiceExamples = voiceResults
+    .flat()
+    .sort((a, b) => (b.edit_ratio ?? 0) - (a.edit_ratio ?? 0))
+    .slice(0, config.posting.voice_examples_count);
 
   const systemPrompt = buildSystemPrompt(config);
   const userPrompt = buildUserPrompt(commit, findings, voiceExamples, platforms, config);
@@ -87,14 +90,8 @@ function parseResponse(raw: string): { linkedin: string; instagram: string } {
   const instagramMatch = raw.match(/<instagram_draft>([\s\S]*?)<\/instagram_draft>/);
 
   if (!linkedinMatch || !instagramMatch) {
-    // Fallback: split by a separator or use full text for both
-    logger.warn('ai.parse.missing_tags', { preview: raw.slice(0, 200) });
-
-    const half = Math.floor(raw.length / 2);
-    return {
-      linkedin: raw.slice(0, half).trim(),
-      instagram: raw.slice(half).trim() || raw.trim(),
-    };
+    logger.error('ai.parse.missing_tags', { preview: raw.slice(0, 200) });
+    throw new Error('Claude response missing XML tags — draft discarded to avoid broken posts');
   }
 
   return {
