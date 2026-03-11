@@ -36,7 +36,7 @@ const PATTERNS: readonly ObservabilityPattern[] = [
     detect: (lines) => lines.some((l) =>
       /\bnew\s+(Counter|Histogram|Gauge|Summary)\s*\(/.test(l) ||
       /\b(prometheus|prom-client|statsd|datadog-metrics)\b/.test(l) ||
-      /\.(inc|observe|set|timing)\s*\(/.test(l),
+      /\.(observe|timing)\s*\(/.test(l),
     ),
   },
   {

@@ -36,7 +36,9 @@ const PATTERNS: readonly DepPattern[] = [
       for (const addedLine of added) {
         const addedMatch = addedLine.match(/"([^"]+)":\s*"[\^~]?(\d+)\./);
         if (!addedMatch) continue;
-        const [, depName, addedMajor] = addedMatch;
+        const depName = addedMatch[1];
+        const addedMajor = addedMatch[2];
+        if (!depName || !addedMajor) continue;
         for (const removedLine of removed) {
           const removedMatch = removedLine.match(new RegExp(`"${depName}":\\s*"[\\^~]?(\\d+)\\.`));
           if (removedMatch && removedMatch[1] !== addedMajor) return true;

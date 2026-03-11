@@ -8,6 +8,9 @@ interface ServiceSignature {
   score: number;
 }
 
+// AI integrations are covered by AiAssistedModule — skip here to avoid duplicate findings
+const AI_CATEGORY = 'AI / large language model';
+
 const KNOWN_SERVICES: ServiceSignature[] = [
   {
     name: 'Redis',
@@ -98,6 +101,7 @@ export class IntegrationModule implements CodeAnalyzer {
     const addedText = addedLines.join('\n');
 
     for (const service of KNOWN_SERVICES) {
+      if (service.category === AI_CATEGORY) continue;
       if (service.patterns.some(p => p.test(addedText))) {
         return {
           moduleId: this.id,
