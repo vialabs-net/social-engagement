@@ -17,6 +17,7 @@ import { IntegrationModule }     from './integration.js';
 import { TestingModule }         from './testing.js';
 import { AiAssistedModule }      from './ai-assisted.js';
 import { PerformanceModule }     from './performance.js';
+import { SecurityModule }        from './security.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -27,4 +28,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new TestingModule(),
   new AiAssistedModule(),
   new PerformanceModule(),
+  new SecurityModule(),
 ];
