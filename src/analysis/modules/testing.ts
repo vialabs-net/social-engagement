@@ -39,6 +39,7 @@ export class TestingModule implements CodeAnalyzer {
         technicalDetail: `Parametrized testing (test.each/pytest.parametrize), data-driven test cases, boundary value analysis. ~${testCount} test cases added.`,
         plainLanguage: 'Parametrized tests express "for all these inputs, I expect these outputs" in one readable block. They make it explicit which specific values were chosen for testing and why — especially useful for numeric boundaries, currency rounding, and state transitions.',
         interestScore: 8,
+        contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
       };
     }
 
@@ -52,6 +53,7 @@ export class TestingModule implements CodeAnalyzer {
         technicalDetail: `Edge case testing, boundary value analysis. Keywords detected: ${uniqueKeywords.join(', ')}. ~${testCount} test cases.`,
         plainLanguage: `The tests specifically target the scenarios that most implementations get wrong: ${uniqueKeywords.join(', ')}. Edge cases don't throw exceptions — they produce plausible-looking wrong answers until someone checks the math.`,
         interestScore: 7,
+        contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
       };
     }
 
@@ -63,6 +65,7 @@ export class TestingModule implements CodeAnalyzer {
         technicalDetail: `Unit testing${hasMocks ? ', mock/stub isolation' : ''}. ${testCount} test cases, ${testDiffs.reduce((s, d) => s + d.additions, 0)} lines added.`,
         plainLanguage: `The commit expanded the test suite with ${testCount} new cases${hasMocks ? ', using mocks to isolate the unit under test from its dependencies' : ''}. More tests mean faster feedback when something breaks.`,
         interestScore: 6,
+        contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
       };
     }
 

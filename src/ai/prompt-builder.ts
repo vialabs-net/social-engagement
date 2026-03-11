@@ -123,6 +123,9 @@ export function buildUserPrompt(
     parts.push(`  What: ${finding.finding}`);
     parts.push(`  Technical detail: ${finding.technicalDetail}`);
     parts.push(`  Plain language: ${finding.plainLanguage}`);
+    if (finding.contextHint) {
+      parts.push(`  Context: ${finding.contextHint}`);
+    }
     if (finding.evidence?.before || finding.evidence?.after) {
       parts.push(`  Evidence: before="${finding.evidence.before ?? ''}" after="${finding.evidence.after ?? ''}"`);
     }
@@ -142,7 +145,9 @@ Steps:
 1. Feature the highest interest_score finding. Mention others only if they add context.
 2. Include project context — don't assume the reader saw previous posts.
 3. Use specific details from each finding's technical_detail. Real data, real names.
-4. Match the rhythm and style of <voice_history> if present.
+4. Use each finding's Context to name specific files and projects in the narrative.
+   Say "In my scraper project, ReconciliationService.ts" not "in a service file".
+5. Match the rhythm and style of <voice_history> if present.
 ${websiteRef}
 
 Generate for these platforms: ${platforms.join(', ')}
@@ -168,6 +173,7 @@ SELF-CHECK before responding:
 - Is there project context for a first-time reader?
 - Does it match the voice examples and the <voice_identity> rules?
 - Is the closing a direct statement, not a question?
+- Does it name the specific file and project, not generic placeholders?
 </task>`);
 
   return parts.join('\n');

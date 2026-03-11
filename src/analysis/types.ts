@@ -41,6 +41,7 @@ export interface Finding {
   technicalDetail: string; // technical terms, metrics, named concepts
   plainLanguage: string;   // what Claude should explain in the post
   interestScore: number;   // 1–10
+  contextHint?: string;    // e.g. "ReconciliationService.ts in vialabs-net/scrappers"
   evidence?: {
     before?: string;       // code snippet or description of before state
     after?: string;        // code snippet or description of after state

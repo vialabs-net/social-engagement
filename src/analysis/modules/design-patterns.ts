@@ -90,6 +90,7 @@ export class DesignPatternsModule implements CodeAnalyzer {
     if (addedLines.length === 0) return null;
 
     const addedText = addedLines.join('\n');
+    const primaryFile = ctx.diffs[0]?.filename ?? 'unknown';
 
     for (const pattern of PATTERNS) {
       const matches = pattern.addedPatterns.filter(p => p.test(addedText));
@@ -101,6 +102,7 @@ export class DesignPatternsModule implements CodeAnalyzer {
           technicalDetail: `${pattern.name} pattern, ${pattern.principle}. Detected via structural signatures in the diff.`,
           plainLanguage: pattern.explanation,
           interestScore: pattern.interestScore,
+          contextHint: `${primaryFile} in ${ctx.repo}`,
         };
       }
     }

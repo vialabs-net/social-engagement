@@ -53,6 +53,7 @@ export class ComplexityModule implements CodeAnalyzer {
         technicalDetail: `McCabe cyclomatic complexity, extract method refactoring, single-responsibility principle. Decision delta: -${delta}`,
         plainLanguage: `The commit simplified branching logic significantly. Fewer if/else/switch branches means fewer paths a bug can take, fewer test cases needed, and code that's easier to read and change.`,
         interestScore: score,
+        contextHint: `${primaryFile} in ${ctx.repo}`,
         evidence: {
           before: `~${removedDecisions} decision branches`,
           after: `~${addedDecisions} decision branches (reduced by ${delta})`,
@@ -70,6 +71,7 @@ export class ComplexityModule implements CodeAnalyzer {
         technicalDetail: `McCabe cyclomatic complexity. Decision delta: +${increase}. May warrant future refactoring.`,
         plainLanguage: `The commit added significant branching logic. This may be intentional (handling more cases) but is worth noting as an area to watch.`,
         interestScore: score,
+        contextHint: `${affectedFiles[0] ?? 'the codebase'} in ${ctx.repo}`,
       };
     }
   }
