@@ -10,7 +10,8 @@ export type AnalysisCategory =
   | 'security'
   | 'api_design'
   | 'error_resilience'
-  | 'observability';
+  | 'observability'
+  | 'concurrency';
 
 export interface FileDiff {
   filename: string;
