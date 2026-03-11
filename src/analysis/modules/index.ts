@@ -26,6 +26,8 @@ import { DxModule }              from './dx.js';
 import { DependencyHealthModule } from './dependency-health.js';
 import { EvolutionaryModule }    from './evolutionary.js';
 import { JsAdvancedModule }      from './js-advanced.js';
+import { ReactPatternsModule }  from './react-patterns.js';
+import { DevopsModule }         from './devops.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -45,4 +47,6 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new DependencyHealthModule(),
   new EvolutionaryModule(),
   new JsAdvancedModule(),
+  new ReactPatternsModule(),
+  new DevopsModule(),
 ];

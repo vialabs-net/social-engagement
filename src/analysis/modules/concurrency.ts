@@ -48,9 +48,7 @@ const PATTERNS: readonly ConcurrencyPattern[] = [
     technicalDetail: 'Concurrency limiting — bounding the number of parallel operations to prevent resource exhaustion.',
     explanation: 'Running 10,000 requests in parallel crashes the process. A concurrency limiter runs them in controlled batches — fast enough to be useful, bounded enough to stay stable.',
     detect: (lines) => lines.some((l) =>
-      /\b(p-limit|p-queue|p-map|PQueue|pLimit)\b/.test(l) ||
-      /\bPromise\.allSettled\s*\(/.test(l) ||
-      /\bPromise\.all\s*\(\s*\w+\.map\s*\(/.test(l),
+      /\b(p-limit|p-queue|p-map|PQueue|pLimit)\b/.test(l),
     ),
   },
   {

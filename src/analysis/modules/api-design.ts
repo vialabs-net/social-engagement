@@ -25,7 +25,7 @@ function hasPaginationCoOccurrence(lines: readonly string[]): boolean {
 const PATTERNS: readonly ApiPattern[] = [
   {
     name: 'RESTful route definition',
-    score: 5,
+    score: 7,
     technicalDetail: 'RESTful routing — HTTP verbs mapped to resource endpoints following REST conventions.',
     explanation: 'REST routes use HTTP verbs (GET, POST, PUT, DELETE) to express intent. A well-named route like GET /users/:id is self-documenting — the verb says the action, the path says the resource.',
     detect: (lines) => lines.some((l) =>
