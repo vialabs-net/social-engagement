@@ -47,7 +47,7 @@ function detectFileRename(diffs: readonly FileDiff[]): Finding | null {
     finding: `file renamed: ${renamed.filename}`,
     technicalDetail: 'File rename — improving naming to better reflect the module\'s responsibility and make the codebase more navigable.',
     plainLanguage: 'Renaming a file signals that the team is investing in clarity. Good names reduce the time it takes a new developer to find what they are looking for.',
-    interestScore: 8,
+    interestScore: 5,
   };
 }
 

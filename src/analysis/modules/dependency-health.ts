@@ -49,7 +49,7 @@ const PATTERNS: readonly DepPattern[] = [
   },
   {
     name: 'new dependency added',
-    score: 7,
+    score: 5,
     technicalDetail: 'New dependency — a new package added to the project, expanding the dependency tree and attack surface.',
     explanation: 'Every new dependency is a bet on someone else\'s code. It solves a problem, but adds maintenance burden, security surface, and bundle size. The best dependency is one you don\'t need.',
     detect: (added, removed) => {
@@ -79,7 +79,7 @@ const PATTERNS: readonly DepPattern[] = [
   },
   {
     name: 'engine constraint',
-    score: 7,
+    score: 5,
     technicalDetail: 'Engine constraint — pinning the required Node.js or npm version to prevent runtime incompatibilities.',
     explanation: 'An engine constraint in package.json prevents "works on my machine" problems. npm install fails immediately if the Node version is wrong — no mysterious runtime errors later.',
     detect: (added) => added.some((l) =>

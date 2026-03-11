@@ -52,7 +52,7 @@ const PATTERNS: readonly ObservabilityPattern[] = [
   },
   {
     name: 'correlation ID',
-    score: 7,
+    score: 5,
     technicalDetail: 'Correlation ID — a unique identifier propagated through all services handling a single request for end-to-end traceability.',
     explanation: 'A correlation ID ties every log, error, and metric to one user request. When something breaks, you search one ID and see everything that happened across all services.',
     detect: (lines) => lines.some((l) =>
