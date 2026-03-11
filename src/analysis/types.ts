@@ -15,7 +15,9 @@ export type AnalysisCategory =
   | 'dx'
   | 'dependency_health'
   | 'evolutionary'
-  | 'js_advanced';
+  | 'js_advanced'
+  | 'react_patterns'
+  | 'devops';
 
 export interface FileDiff {
   filename: string;
