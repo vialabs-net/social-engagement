@@ -18,6 +18,7 @@ import { TestingModule }         from './testing.js';
 import { AiAssistedModule }      from './ai-assisted.js';
 import { PerformanceModule }     from './performance.js';
 import { SecurityModule }        from './security.js';
+import { ApiDesignModule }       from './api-design.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -29,4 +30,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new AiAssistedModule(),
   new PerformanceModule(),
   new SecurityModule(),
+  new ApiDesignModule(),
 ];
