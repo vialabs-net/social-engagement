@@ -45,6 +45,10 @@ export class AnthropicClient {
         const e = err as { status?: number; message?: string };
         if (e.status === 400) throw new PromptError(`Bad request: ${e.message}`);
         if (e.status === 401) throw new Error('Anthropic API: Unauthorized. Check ANTHROPIC_API_KEY.');
+        // All other 4xx are non-retriable (403 Forbidden, 404 Not Found, etc.)
+        if (e.status && e.status >= 402 && e.status < 500) {
+          throw new PromptError(`Anthropic API ${e.status}: ${e.message}`);
+        }
         throw err;
       }
     }, ANTHROPIC_RETRY_POLICY, 'anthropic.complete');
