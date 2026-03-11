@@ -90,14 +90,24 @@ These two crons are kept separate for independent debuggability.
 │       NOT interesting → skipped (pending_batch write not yet implemented)
 │       IS interesting → analysis pipeline
 │
-├── analysis/pipeline.ts (ALL modules run IN PARALLEL)
+├── analysis/pipeline.ts (ALL 17 modules run IN PARALLEL)
 │   ├── ComplexityModule.analyze(ctx)
 │   ├── DesignPatternsModule.analyze(ctx)
 │   ├── CleanCodeModule.analyze(ctx)
-│   ├── TypeSystemModule.analyze(ctx)     ← TypeScript only
+│   ├── TypeSystemModule.analyze(ctx)        ← TypeScript only
 │   ├── IntegrationModule.analyze(ctx)
 │   ├── TestingModule.analyze(ctx)
-│   └── AiAssistedModule.analyze(ctx)
+│   ├── AiAssistedModule.analyze(ctx)
+│   ├── PerformanceModule.analyze(ctx)       ← N+1, batch, streams, sync I/O
+│   ├── SecurityModule.analyze(ctx)          ← secrets, SQL injection, auth
+│   ├── ApiDesignModule.analyze(ctx)         ← REST, versioning, rate limiting
+│   ├── ErrorResilienceModule.analyze(ctx)   ← circuit breaker, retry, shutdown
+│   ├── ObservabilityModule.analyze(ctx)     ← tracing, metrics, error tracking
+│   ├── ConcurrencyModule.analyze(ctx)       ← mutex, workers, atomics
+│   ├── DxModule.analyze(ctx)                ← custom errors, config validation
+│   ├── DependencyHealthModule.analyze(ctx)  ← major bumps, security deps
+│   ├── EvolutionaryModule.analyze(ctx)      ← extraction, migration, deprecation
+│   └── JsAdvancedModule.analyze(ctx)        ← Proxy, WeakRef, generators
 │   → Promise.allSettled (one failure = null, not crash)
 │   → Sort by interestScore DESC → top 3 findings
 │   → If 0 findings → SKIP (no Claude call, no Buffer post)
@@ -160,7 +170,7 @@ interface CodeAnalyzer {
 - Import the module class + add one line to the array
 - No other code changes anywhere
 
-**MVP modules** (7): complexity, design_patterns, clean_code, type_system, integration, testing, ai_assisted
+**Modules** (17): complexity, design_patterns, clean_code, type_system, integration, testing, ai_assisted, performance, security, api_design, error_resilience, observability, concurrency, dx, dependency_health, evolutionary, js_advanced
 
 **Pipeline behavior**:
 - All modules run in `Promise.allSettled` (parallel, failure-isolated)
@@ -376,14 +386,24 @@ devcast/
 │   │   ├── diff-parser.ts           # raw Git patch → FileDiff[]
 │   │   ├── language-detector.ts     # file extensions → language list
 │   │   └── modules/
-│   │       ├── index.ts             # MODULE_REGISTRY ← only file to edit for new module
+│   │       ├── index.ts             # MODULE_REGISTRY (17 modules) ← only file to edit
 │   │       ├── complexity.ts
 │   │       ├── design-patterns.ts
 │   │       ├── clean-code.ts
 │   │       ├── type-system.ts       # TypeScript only
 │   │       ├── integration.ts
 │   │       ├── testing.ts
-│   │       └── ai-assisted.ts
+│   │       ├── ai-assisted.ts
+│   │       ├── performance.ts       # N+1, batch, streams, sync I/O
+│   │       ├── security.ts          # secrets, SQL injection, auth, headers
+│   │       ├── api-design.ts        # REST, versioning, rate limiting, pagination
+│   │       ├── error-resilience.ts  # circuit breaker, retry, shutdown, health
+│   │       ├── observability.ts     # tracing, logging, metrics, error tracking
+│   │       ├── concurrency.ts       # mutex, atomics, workers, race guards
+│   │       ├── dx.ts                # custom errors, config validation, CLI
+│   │       ├── dependency-health.ts # major bumps, security deps, removals
+│   │       ├── evolutionary.ts      # extraction, renames, migrations, deprecation
+│   │       └── js-advanced.ts       # Proxy/Reflect, WeakRef, generators
 │   ├── github/
 │   │   ├── client.ts                # Octokit + ETag state
 │   │   ├── events-poller.ts         # poll /users/{u}/events
@@ -443,7 +463,7 @@ Build in this sequence — each layer depends on the previous:
 4. `src/scheduling/slot-manager.ts` (date-fns-tz)
 5. `src/utils/` — logger, retry, commit-filter
 6. `src/analysis/types.ts` + `diff-parser.ts` + `language-detector.ts`
-7. `src/analysis/modules/` — all 7 MVP modules + index.ts
+7. `src/analysis/modules/` — all 17 modules + index.ts
 8. `src/analysis/pipeline.ts`
 9. `src/github/client.ts` + `events-poller.ts` + `commit-enricher.ts`
 10. `src/ai/client.ts` + `prompt-builder.ts` + `post-generator.ts`
