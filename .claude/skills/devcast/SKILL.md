@@ -39,7 +39,7 @@ Buffer "sent" API → Match by text similarity → computeEditRatio → Voice Hi
 github/events-poller.ts       GET /users/{username}/events (ETag-cached)
 github/commit-enricher.ts     GET /repos/{o}/{r}/commits/{sha} → FileDiff[]
 utils/commit-filter.ts        isInteresting() — rule-based, zero API cost
-analysis/pipeline.ts          ALL 17 modules run IN PARALLEL (Promise.allSettled)
+analysis/pipeline.ts          ALL 19 modules run IN PARALLEL (Promise.allSettled)
   ├── complexity.ts            Cyclomatic complexity, deep nesting
   ├── design-patterns.ts       Strategy, observer, factory, builder, decorator, singleton
   ├── clean-code.ts            KISS line reduction, DRY function extraction
@@ -56,7 +56,9 @@ analysis/pipeline.ts          ALL 17 modules run IN PARALLEL (Promise.allSettled
   ├── dx.ts                    Custom errors, config validation, CLI, env validation
   ├── dependency-health.ts     Security deps, major bumps, new/removed deps
   ├── evolutionary.ts          Module extraction, renames, migrations, deprecation
-  └── js-advanced.ts           Proxy/Reflect, WeakRef, generators/iterators
+  ├── js-advanced.ts           Proxy/Reflect, WeakRef, generators/iterators
+  ├── react-patterns.ts        Custom hooks, context, memo, Suspense, error boundary, server components
+  └── devops.ts                Multi-stage Docker, CI workflows, health checks, Helm, secrets
   → top 3 findings by interestScore DESC
   → 0 findings → SKIP (no Claude call, no Buffer post)
 ai/prompt-builder.ts          voice examples TOP + commit + findings (with contextHint) + task BOTTOM
@@ -103,7 +105,7 @@ src/
 │   ├── pipeline.ts           parallel execution, ranking, top-N slice
 │   ├── diff-parser.ts        raw Git patch → FileDiff[]
 │   └── modules/
-│       └── index.ts          MODULE_REGISTRY (17 modules) ← only file to edit
+│       └── index.ts          MODULE_REGISTRY (19 modules) ← only file to edit
 ├── ai/
 │   ├── client.ts             Anthropic SDK (sonnet, max_tokens=1600)
 │   ├── prompt-builder.ts     voice TOP + commit + findings + task BOTTOM
