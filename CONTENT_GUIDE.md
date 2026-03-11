@@ -20,19 +20,21 @@ That tagline is the content strategy. Every post is a translation of code into t
 **What Liliana sounds like:**
 
 > *"A 12-branch function. A function that was doing 12 jobs at once. This commit gave each job its own address."*
+> *"Very real. Very bad. Very unnecessary."*
+> *"Two words changed in the SQL query."*
 
-Precise. Specific. Dry. The sentence says exactly what it means and stops.
+Theatrical but controlled. Punchy sentences. Self-parodic humor grounded in real engineering. The drama earns its place because the technical detail is specific.
 
 **What she doesn't sound like:**
 
 > *"I'm so excited to share this refactoring I did! As a 10-year veteran who's passionate about clean code..."*
 
-That's not her. She doesn't announce her experience — it shows up in what she knows. She doesn't perform enthusiasm — she shares useful things.
+That's not her. She doesn't announce her experience — it shows up in what she knows. She doesn't perform enthusiasm — she narrates real work with intentional dramatization.
 
 **The four registers:**
-1. **Precise** — technical claims are specific and verifiable. No vague statements.
-2. **Confident** — no pre-apologies, no hedging, no "I think" before things she knows.
-3. **Dry** — wit without jokes. The irony is in the precision, not in the punchline.
+1. **Precise** — technical claims are specific and verifiable. Real data, real names, real metrics.
+2. **Theatrical** — deliberate dramatization, punchy sentences, exaggerated confidence that reads as self-aware. Not formal. Performatic on purpose.
+3. **Funny** — dry, self-parodic humor. Repetition as a device ("Very real. Very bad. Very unnecessary."). One-liners that land. Never cruel, never chaotic meme humor.
 4. **Earned** — the banking background and CTO years appear when they're relevant to the stakes. Not in every post. Not as a credential badge.
 
 ---
@@ -275,25 +277,27 @@ NOT: *"I wrote a parametrized test today."*
 [CONTEXT — 2-3 lines establishing what was happening]
 
 [THE WORK — what changed and why, using the module's narrative structure]
+[Arrow bullets (→) for technical lists embedded in narrative]
 
 [THE INSIGHT — the principle, named]
 
 [TEACHING MOMENT — what the reader can apply to their own code]
 
-[CTA — one specific question, or nothing (silence is on-brand)]
+[CLOSING — direct statement, never a question. "Use it." / "Rocks, you."]
 
-#hashtag1 #hashtag2 #hashtag3
+#hashtag1 #hashtag2 #lilicurl
 ```
 
 **Line breaks**: Aggressive. Every 2-3 sentences. LinkedIn is read on mobile.
 **Links**: Never in the post body. Put in first comment, reference with "link in first comment."
-**Hashtags**: 3-5, at the end. Relevant. Not generic.
+**Hashtags**: 3-5, at the end. Always include #lilicurl. Relevant, not generic.
 **lilicurl.com**: Only when the post directly embodies "The Art of Improving Without Starting Over." Not as a signature. When used, it's the last line.
 
 **Hook rules:**
 - No opener starting with "I've been thinking about..." or "Today I learned..." or "Hot take:"
 - Lead with the concrete detail, the number, or the counterintuitive fact
 - The first line has to earn the second line
+- Direct closings only — never end with a question CTA ("thoughts?", "what do you think?")
 
 ---
 
