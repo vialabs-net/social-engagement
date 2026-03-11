@@ -8,7 +8,8 @@ export type AnalysisCategory =
   | 'ai_assisted'
   | 'performance'
   | 'security'
-  | 'api_design';
+  | 'api_design'
+  | 'error_resilience';
 
 export interface FileDiff {
   filename: string;
