@@ -4,7 +4,7 @@ import type { BufferClient } from './client.js';
 import type { IVoiceStorage, Platform } from '../voice/storage.js';
 import type { Config } from '../config/schema.js';
 
-const MATCH_THRESHOLD = 0.3;  // min similarity to count as a match
+const MATCH_THRESHOLD = 0.4;  // min similarity to count as a match
 
 /**
  * Polls Buffer's "sent" feed and updates voice history for newly published posts.
@@ -54,19 +54,25 @@ async function scanPlatform(
 
   let matched = 0;
 
+  // Copy to mutable list so matched drafts can be removed
+  const remaining = [...unmatched];
+
   for (const sentPost of sentPosts) {
     let bestScore = 0;
-    let bestDraft: (typeof unmatched)[number] | null = null;
+    let bestIdx = -1;
 
-    for (const draft of unmatched) {
+    for (let i = 0; i < remaining.length; i++) {
+      const draft = remaining[i];
+      if (!draft) continue;
       const score = computeEditRatio(draft.ai_draft, sentPost.text);
       if (score > bestScore) {
         bestScore = score;
-        bestDraft = draft;
+        bestIdx = i;
       }
     }
 
-    if (bestDraft && bestScore >= MATCH_THRESHOLD) {
+    if (bestIdx >= 0 && bestScore >= MATCH_THRESHOLD) {
+      const bestDraft = remaining[bestIdx]!;
       const publishedAt = sentPost.createdAt;
       await storage.updatePublished({
         id: bestDraft.id,
@@ -79,6 +85,8 @@ async function scanPlatform(
         editRatio: bestScore.toFixed(2),
         platform,
       });
+      // Remove matched draft so it can't be claimed by another sent post
+      remaining.splice(bestIdx, 1);
       matched++;
     }
   }

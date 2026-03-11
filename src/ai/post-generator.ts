@@ -2,7 +2,7 @@ import { logger } from '../utils/logger.js';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder.js';
 import type { AnthropicClient, PromptError } from './client.js';
 import type { Finding } from '../analysis/types.js';
-import type { IVoiceStorage, Platform } from '../voice/storage.js';
+import type { IVoiceStorage, VoicePost, Platform } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { Config } from '../config/schema.js';
 
@@ -39,10 +39,10 @@ export async function generatePosts(
   const voiceResults = await Promise.all(
     platforms.map((p) => storage.getTopVoiceExamples(p, config.posting.voice_examples_count)),
   );
-  const voiceExamples = voiceResults
-    .flat()
-    .sort((a, b) => (b.edit_ratio ?? 0) - (a.edit_ratio ?? 0))
-    .slice(0, config.posting.voice_examples_count);
+  const voiceExamples = deduplicateVoiceExamples(
+    voiceResults.flat(),
+    config.posting.voice_examples_count,
+  );
 
   const systemPrompt = buildSystemPrompt(config);
   const userPrompt = buildUserPrompt(commit, findings, voiceExamples, platforms, config);
@@ -98,6 +98,29 @@ function parseResponse(raw: string): { linkedin: string; instagram: string } {
     linkedin: (linkedinMatch[1] ?? '').trim(),
     instagram: (instagramMatch[1] ?? '').trim(),
   };
+}
+
+/**
+ * Deduplicates voice examples by published text (first 100 chars).
+ * Keeps the entry with the highest edit_ratio per unique text.
+ */
+function deduplicateVoiceExamples(
+  posts: VoicePost[],
+  limit: number,
+): VoicePost[] {
+  const sorted = posts.sort((a, b) => (b.edit_ratio ?? 0) - (a.edit_ratio ?? 0));
+  const seen = new Set<string>();
+  const unique: VoicePost[] = [];
+
+  for (const post of sorted) {
+    const key = (post.published ?? post.ai_draft).slice(0, 100);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(post);
+    if (unique.length >= limit) break;
+  }
+
+  return unique;
 }
 
 export type { PromptError };
