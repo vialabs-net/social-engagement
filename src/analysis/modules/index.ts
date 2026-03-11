@@ -22,6 +22,7 @@ import { ApiDesignModule }       from './api-design.js';
 import { ErrorResilienceModule } from './error-resilience.js';
 import { ObservabilityModule }   from './observability.js';
 import { ConcurrencyModule }    from './concurrency.js';
+import { DxModule }              from './dx.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -37,4 +38,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ErrorResilienceModule(),
   new ObservabilityModule(),
   new ConcurrencyModule(),
+  new DxModule(),
 ];

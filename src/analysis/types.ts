@@ -11,7 +11,8 @@ export type AnalysisCategory =
   | 'api_design'
   | 'error_resilience'
   | 'observability'
-  | 'concurrency';
+  | 'concurrency'
+  | 'dx';
 
 export interface FileDiff {
   filename: string;
