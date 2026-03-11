@@ -20,6 +20,7 @@ import { PerformanceModule }     from './performance.js';
 import { SecurityModule }        from './security.js';
 import { ApiDesignModule }       from './api-design.js';
 import { ErrorResilienceModule } from './error-resilience.js';
+import { ObservabilityModule }   from './observability.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -33,4 +34,5 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new SecurityModule(),
   new ApiDesignModule(),
   new ErrorResilienceModule(),
+  new ObservabilityModule(),
 ];

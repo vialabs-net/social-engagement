@@ -9,7 +9,8 @@ export type AnalysisCategory =
   | 'performance'
   | 'security'
   | 'api_design'
-  | 'error_resilience';
+  | 'error_resilience'
+  | 'observability';
 
 export interface FileDiff {
   filename: string;
