@@ -90,7 +90,7 @@ These two crons are kept separate for independent debuggability.
 │       NOT interesting → skipped (pending_batch write not yet implemented)
 │       IS interesting → analysis pipeline
 │
-├── analysis/pipeline.ts (ALL 17 modules run IN PARALLEL)
+├── analysis/pipeline.ts (ALL 19 modules run IN PARALLEL)
 │   ├── ComplexityModule.analyze(ctx)
 │   ├── DesignPatternsModule.analyze(ctx)
 │   ├── CleanCodeModule.analyze(ctx)
@@ -107,7 +107,9 @@ These two crons are kept separate for independent debuggability.
 │   ├── DxModule.analyze(ctx)                ← custom errors, config validation
 │   ├── DependencyHealthModule.analyze(ctx)  ← major bumps, security deps
 │   ├── EvolutionaryModule.analyze(ctx)      ← extraction, migration, deprecation
-│   └── JsAdvancedModule.analyze(ctx)        ← Proxy, WeakRef, generators
+│   ├── JsAdvancedModule.analyze(ctx)        ← Proxy, WeakRef, generators
+│   ├── ReactPatternsModule.analyze(ctx)     ← hooks, context, memo, Suspense (.tsx/.jsx)
+│   └── DevopsModule.analyze(ctx)            ← Docker, CI, Helm, health checks
 │   → Promise.allSettled (one failure = null, not crash)
 │   → Sort by interestScore DESC → top 3 findings
 │   → If 0 findings → SKIP (no Claude call, no Buffer post)
@@ -386,7 +388,7 @@ devcast/
 │   │   ├── diff-parser.ts           # raw Git patch → FileDiff[]
 │   │   ├── language-detector.ts     # file extensions → language list
 │   │   └── modules/
-│   │       ├── index.ts             # MODULE_REGISTRY (17 modules) ← only file to edit
+│   │       ├── index.ts             # MODULE_REGISTRY (19 modules) ← only file to edit
 │   │       ├── complexity.ts
 │   │       ├── design-patterns.ts
 │   │       ├── clean-code.ts
@@ -403,7 +405,9 @@ devcast/
 │   │       ├── dx.ts                # custom errors, config validation, CLI
 │   │       ├── dependency-health.ts # major bumps, security deps, removals
 │   │       ├── evolutionary.ts      # extraction, renames, migrations, deprecation
-│   │       └── js-advanced.ts       # Proxy/Reflect, WeakRef, generators
+│   │       ├── js-advanced.ts       # Proxy/Reflect, WeakRef, generators
+│   │       ├── react-patterns.ts   # hooks, context, memo, Suspense, server components
+│   │       └── devops.ts            # Docker, CI, Helm, health checks, secrets
 │   ├── github/
 │   │   ├── client.ts                # Octokit + ETag state
 │   │   ├── events-poller.ts         # poll /users/{u}/events
@@ -463,7 +467,7 @@ Build in this sequence — each layer depends on the previous:
 4. `src/scheduling/slot-manager.ts` (date-fns-tz)
 5. `src/utils/` — logger, retry, commit-filter
 6. `src/analysis/types.ts` + `diff-parser.ts` + `language-detector.ts`
-7. `src/analysis/modules/` — all 17 modules + index.ts
+7. `src/analysis/modules/` — all 19 modules + index.ts
 8. `src/analysis/pipeline.ts`
 9. `src/github/client.ts` + `events-poller.ts` + `commit-enricher.ts`
 10. `src/ai/client.ts` + `prompt-builder.ts` + `post-generator.ts`
