@@ -14,7 +14,8 @@ export type AnalysisCategory =
   | 'concurrency'
   | 'dx'
   | 'dependency_health'
-  | 'evolutionary';
+  | 'evolutionary'
+  | 'js_advanced';
 
 export interface FileDiff {
   filename: string;

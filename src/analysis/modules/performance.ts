@@ -78,6 +78,28 @@ const PATTERNS: readonly PerformancePattern[] = [
       /\b(React\.lazy\(|lazy\(\(\)\s*=>|import\(\s*['"]|dynamic\(\(\)\s*=>)/.test(l),
     ),
   },
+  {
+    name: 'event loop blocking (sync I/O)',
+    score: 8,
+    technicalDetail: 'Synchronous I/O — fs.readFileSync, execSync, and similar *Sync calls block the event loop, stalling all concurrent requests.',
+    explanation: 'Node.js handles thousands of requests on a single thread. A *Sync call freezes that thread until the disk or child process responds — every other request waits in line.',
+    detect: (lines, filePatch) => {
+      const isCli = /(?:cli|script|bin|seed|migrate|setup)\b/i.test(filePatch);
+      if (isCli) return false;
+      return lines.some((l) =>
+        /\b(readFileSync|writeFileSync|appendFileSync|existsSync|mkdirSync|readdirSync|statSync|execSync|execFileSync|spawnSync)\s*\(/.test(l),
+      );
+    },
+  },
+  {
+    name: 'stream processing',
+    score: 7,
+    technicalDetail: 'Node.js streams — processing data chunk-by-chunk instead of loading the entire payload into memory.',
+    explanation: 'Streams process data as it arrives. Instead of reading a 2GB file into memory, a stream handles it in small chunks — constant memory, no matter the file size.',
+    detect: (lines) => lines.some((l) =>
+      /\b(createReadStream|createWriteStream|pipeline\(|new\s+Transform\(|new\s+Readable\(|new\s+Writable\(|\.pipe\s*\()/.test(l),
+    ),
+  },
 ];
 
 export class PerformanceModule implements CodeAnalyzer {

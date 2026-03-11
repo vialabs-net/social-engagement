@@ -60,6 +60,15 @@ const PATTERNS: readonly ResiliencePattern[] = [
       /\b@Get\s*\(\s*['"`](health|ready|liveness)/.test(l),
     ),
   },
+  {
+    name: 'graceful shutdown',
+    score: 8,
+    technicalDetail: 'Graceful shutdown — listening for SIGINT/SIGTERM to close connections and flush buffers before the process exits.',
+    explanation: 'When Kubernetes sends SIGTERM, a graceful shutdown finishes in-flight requests and closes DB connections. Without it, requests get cut mid-response and data can corrupt.',
+    detect: (lines) => lines.some((l) =>
+      /\bprocess\.on\s*\(\s*['"`](SIGINT|SIGTERM)['"`]/.test(l),
+    ),
+  },
 ];
 
 export class ErrorResilienceModule implements CodeAnalyzer {

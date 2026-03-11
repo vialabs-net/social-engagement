@@ -62,6 +62,17 @@ const PATTERNS: readonly DxPattern[] = [
       /\b(assert|invariant)\s*\(.*,\s*['"`]/.test(l),
     ),
   },
+  {
+    name: 'callback to promise conversion',
+    score: 7,
+    technicalDetail: 'util.promisify — converts Node.js error-first callback APIs into promise-based functions for async/await usage.',
+    explanation: 'Legacy Node.js APIs use error-first callbacks that nest deeply. util.promisify wraps them as promises so you can use async/await — flat, readable, and try/catch-friendly.',
+    detect: (lines) => lines.some((l) =>
+      /\butil\.promisify\s*\(/.test(l) ||
+      /\bpromisify\b.*\brequire\s*\(\s*['"]util['"]/.test(l) ||
+      /\bimport\b.*\bpromisify\b.*\bfrom\s*['"](?:node:)?util['"]/.test(l),
+    ),
+  },
 ];
 
 export class DxModule implements CodeAnalyzer {
