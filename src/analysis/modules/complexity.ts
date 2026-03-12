@@ -60,10 +60,10 @@ export class ComplexityModule implements CodeAnalyzer {
         },
       };
     } else {
-      // Complexity increase — less interesting, only flag if large
+      // Complexity increase — low signal, only flag if very large
       const increase = Math.abs(delta);
-      if (increase < 6) return null;
-      const score = Math.min(6, 2 + Math.floor(increase / 4));
+      if (increase < 10) return null;
+      const score = Math.min(4, 1 + Math.floor(increase / 8));
       return {
         moduleId: this.id,
         aspect: 'cyclomatic complexity increase',
