@@ -110,27 +110,17 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Generate posts (ONE Claude call)
-      const { linkedin, instagram, linkedinDraftId, instagramDraftId } = await generatePosts(
+      // Generate post (ONE Claude call — returns full post + Twitter short variant)
+      const { bufferText, draftId } = await generatePosts(
         anthropic, commit, findings, storage, config,
       );
 
-      // Publish to Buffer
-      const publishResults = [];
-
-      if (config.platforms.linkedin.enabled && linkedinDraftId) {
-        const result = await publishToBuffer(bufferClient, storage, config, linkedinDraftId, linkedin, 'linkedin', commit.message);
-        if (result) publishResults.push(result);
-      }
-
-      if (config.platforms.instagram.enabled && instagramDraftId) {
-        const result = await publishToBuffer(bufferClient, storage, config, instagramDraftId, instagram, 'instagram', commit.message);
-        if (result) publishResults.push(result);
-      }
+      // Publish ONE Buffer Idea with both variants in the text
+      const publishResult = await publishToBuffer(bufferClient, storage, config, draftId, bufferText, commit.message);
 
       // Notification issue (non-fatal)
-      if (publishResults.length > 0) {
-        await notifyNewDraft(github, owner, repo, commit, publishResults);
+      if (publishResult) {
+        await notifyNewDraft(github, owner, repo, commit, [publishResult]);
       }
     }
   }

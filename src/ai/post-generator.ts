@@ -3,15 +3,13 @@ import { buildSystemPrompt, buildUserPrompt } from './prompt-builder.js';
 import { computeEditRatio } from '../voice/similarity.js';
 import type { AnthropicClient, PromptError } from './client.js';
 import type { Finding } from '../analysis/types.js';
-import type { IVoiceStorage, VoicePost, Platform } from '../voice/storage.js';
+import type { IVoiceStorage, VoicePost } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { Config } from '../config/schema.js';
 
 export interface GeneratedPosts {
-  linkedin: string;
-  instagram: string;
-  linkedinDraftId: string;
-  instagramDraftId: string;
+  bufferText: string;
+  draftId: string;
 }
 
 /**
@@ -30,76 +28,53 @@ export async function generatePosts(
     throw new Error('generatePosts called with 0 findings — caller should skip this call');
   }
 
-  const platforms: Platform[] = [];
-  if (config.platforms.linkedin.enabled) platforms.push('linkedin');
-  if (config.platforms.instagram.enabled) platforms.push('instagram');
-
-  if (platforms.length === 0) throw new Error('No platforms enabled in config');
-
-  // Fetch a larger pool so topic selection has enough candidates
+  // Fetch voice examples (linkedin as primary training platform)
   const poolSize = config.posting.voice_examples_count * 3;
-  const voiceResults = await Promise.all(
-    platforms.map((p) => storage.getTopVoiceExamples(p, poolSize)),
-  );
-  const voiceExamples = selectVoiceExamples(
-    voiceResults.flat(),
-    findings,
-    config.posting.voice_examples_count,
-  );
+  const voicePool = await storage.getTopVoiceExamples('linkedin', poolSize);
+  const voiceExamples = selectVoiceExamples(voicePool, findings, config.posting.voice_examples_count);
 
   const systemPrompt = buildSystemPrompt(config);
-  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, platforms, config);
+  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, config);
 
   logger.info('ai.generate.start', { sha: commit.sha, repo: commit.repo, findings: findings.length });
 
   const rawResponse = await client.complete(systemPrompt, userPrompt);
 
-  const { linkedin, instagram } = parseResponse(rawResponse);
+  const { post, shortPost } = parseResponse(rawResponse);
 
   const topFinding = findings[0]?.finding;
   const findingsCount = findings.length;
 
-  // Store drafts immediately
-  const [linkedinDraftId, instagramDraftId] = await Promise.all([
-    config.platforms.linkedin.enabled
-      ? storage.saveDraft({
-          commit_sha: commit.sha,
-          repo: commit.repo,
-          platform: 'linkedin',
-          ai_draft: linkedin,
-          top_finding: topFinding,
-          findings_count: findingsCount,
-        })
-      : Promise.resolve(''),
-    config.platforms.instagram.enabled
-      ? storage.saveDraft({
-          commit_sha: commit.sha,
-          repo: commit.repo,
-          platform: 'instagram',
-          ai_draft: instagram,
-          top_finding: topFinding,
-          findings_count: findingsCount,
-        })
-      : Promise.resolve(''),
-  ]);
+  // One record per commit — ai_draft stores the full post for voice training
+  const draftId = await storage.saveDraft({
+    commit_sha: commit.sha,
+    repo: commit.repo,
+    platform: 'linkedin',
+    ai_draft: post,
+    top_finding: topFinding,
+    findings_count: findingsCount,
+  });
 
-  logger.info('ai.generate.done', { sha: commit.sha, linkedinDraftId, instagramDraftId });
+  // Buffer Idea text includes both variants so Liliana can copy per platform in the UI
+  const bufferText = `${post}\n\n─────────────────\n🐦 Twitter:\n${shortPost}`;
 
-  return { linkedin, instagram, linkedinDraftId, instagramDraftId };
+  logger.info('ai.generate.done', { sha: commit.sha, draftId });
+
+  return { bufferText, draftId };
 }
 
-function parseResponse(raw: string): { linkedin: string; instagram: string } {
-  const linkedinMatch = raw.match(/<linkedin_draft>([\s\S]*?)<\/linkedin_draft>/);
-  const instagramMatch = raw.match(/<instagram_draft>([\s\S]*?)<\/instagram_draft>/);
+function parseResponse(raw: string): { post: string; shortPost: string } {
+  const postMatch = raw.match(/<post_draft>([\s\S]*?)<\/post_draft>/);
+  const shortMatch = raw.match(/<short_draft>([\s\S]*?)<\/short_draft>/);
 
-  if (!linkedinMatch || !instagramMatch) {
+  if (!postMatch || !shortMatch) {
     logger.error('ai.parse.missing_tags', { preview: raw.slice(0, 200) });
     throw new Error('Claude response missing XML tags — draft discarded to avoid broken posts');
   }
 
   return {
-    linkedin: (linkedinMatch[1] ?? '').trim(),
-    instagram: (instagramMatch[1] ?? '').trim(),
+    post: (postMatch[1] ?? '').trim(),
+    shortPost: (shortMatch[1] ?? '').trim(),
   };
 }
 

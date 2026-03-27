@@ -19,11 +19,10 @@ export async function notifyNewDraft(
 ): Promise<void> {
   if (results.length === 0) return;
 
-  const [repoOwner, repoName] = commit.repo.split('/');
   const commitUrl = `https://github.com/${commit.repo}/commit/${commit.sha}`;
 
-  const platformLines = results.map(r =>
-    `- **${r.platform}**: Buffer Idea ID \`${r.bufferIdeaId}\``,
+  const ideaLines = results.map(r =>
+    `- Buffer Idea ID \`${r.bufferIdeaId}\``,
   );
 
   const body = `## New draft in Buffer Ideas
@@ -31,8 +30,8 @@ export async function notifyNewDraft(
 Commit: [\`${commit.sha.slice(0, 7)}\`](${commitUrl}) in \`${commit.repo}\`
 Message: _${commit.message}_
 
-### Ideas created
-${platformLines.join('\n')}
+### Idea created
+${ideaLines.join('\n')}
 
 ---
 Review in [Buffer Ideas](https://publish.buffer.com/ideas), convert to a post, and schedule.

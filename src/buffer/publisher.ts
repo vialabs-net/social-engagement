@@ -1,18 +1,17 @@
 import { logger } from '../utils/logger.js';
 import type { BufferClient } from './client.js';
-import type { IVoiceStorage, Platform } from '../voice/storage.js';
+import type { IVoiceStorage } from '../voice/storage.js';
 import type { Config } from '../config/schema.js';
 
 export interface PublishResult {
-  platform: Platform;
   draftId: string;
   bufferIdeaId: string;
 }
 
 /**
- * Creates a Buffer Idea for the draft post.
- * Liliana reviews in Buffer's Ideas UI, converts to a scheduled post when ready.
- * No queue management or slot claiming needed — Ideas have no publish queue limit.
+ * Creates a single Buffer Idea per commit.
+ * Text includes the full post + short (Twitter) variant separated by a divider.
+ * Liliana reviews in Buffer's Ideas UI, sets per-platform text there, then publishes.
  */
 export async function publishToBuffer(
   bufferClient: BufferClient,
@@ -20,15 +19,10 @@ export async function publishToBuffer(
   config: Config,
   draftId: string,
   text: string,
-  platform: Platform,
   commitMessage?: string,
 ): Promise<PublishResult | null> {
   const orgId = config.buffer.organization_id;
-  const platformLabel = platform === 'linkedin' ? 'LinkedIn' : 'Instagram';
-  const titleSuffix = commitMessage
-    ? commitMessage.slice(0, 60)
-    : draftId.slice(0, 8);
-  const title = `[${platformLabel}] ${titleSuffix}`;
+  const title = commitMessage ? commitMessage.slice(0, 80) : draftId.slice(0, 8);
 
   const { id: bufferIdeaId } = await bufferClient.createIdea(orgId, title, text);
 
@@ -39,7 +33,7 @@ export async function publishToBuffer(
     status: 'scheduled',
   });
 
-  logger.info('buffer.idea.created', { platform, bufferIdeaId, title });
+  logger.info('buffer.idea.created', { bufferIdeaId, title });
 
-  return { platform, draftId, bufferIdeaId };
+  return { draftId, bufferIdeaId };
 }
