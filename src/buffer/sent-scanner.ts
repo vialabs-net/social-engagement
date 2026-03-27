@@ -84,6 +84,7 @@ async function scanPlatform(
         draftId: bestDraft.id,
         editRatio: bestScore.toFixed(2),
         platform,
+        externalLink: sentPost.externalLink,  // verification: null = Buffer doesn't expose LinkedIn URL
       });
       // Remove matched draft so it can't be claimed by another sent post
       remaining.splice(bestIdx, 1);

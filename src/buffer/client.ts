@@ -13,6 +13,7 @@ export interface BufferPost {
   id: string;
   text: string;
   createdAt: string;  // ISO 8601 timestamp from GraphQL
+  externalLink: string | null;  // published post URL at destination (e.g. LinkedIn) — null if unsupported
 }
 
 export class BufferClient {
@@ -97,7 +98,7 @@ export class BufferClient {
       `query GetSentPosts($input: PostsInput!, $first: Int) {
         posts(input: $input, first: $first) {
           edges {
-            node { id text createdAt }
+            node { id text createdAt externalLink }
           }
         }
       }`,
