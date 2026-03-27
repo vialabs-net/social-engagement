@@ -6,6 +6,12 @@ import type { Config } from '../config/schema.js';
 
 const MATCH_THRESHOLD = 0.4;  // min similarity to count as a match
 
+function extractLinkedInUrn(externalLink: string | null): string | undefined {
+  if (!externalLink) return undefined;
+  const match = externalLink.match(/urn:li:share:\d+/);
+  return match?.[0];
+}
+
 /**
  * Polls Buffer's "sent" feed and updates voice history for newly published posts.
  *
@@ -74,17 +80,19 @@ async function scanPlatform(
     if (bestIdx >= 0 && bestScore >= MATCH_THRESHOLD) {
       const bestDraft = remaining[bestIdx]!;
       const publishedAt = sentPost.createdAt;
+      const linkedinUrn = extractLinkedInUrn(sentPost.externalLink);
       await storage.updatePublished({
         id: bestDraft.id,
         published: sentPost.text,
         edit_ratio: bestScore,
         published_at: publishedAt,
+        linkedin_urn: linkedinUrn,
       });
       logger.info('sent_scanner.matched', {
         draftId: bestDraft.id,
         editRatio: bestScore.toFixed(2),
         platform,
-        externalLink: sentPost.externalLink,  // verification: null = Buffer doesn't expose LinkedIn URL
+        linkedinUrn: linkedinUrn ?? null,
       });
       // Remove matched draft so it can't be claimed by another sent post
       remaining.splice(bestIdx, 1);

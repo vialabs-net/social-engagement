@@ -16,6 +16,9 @@ export interface VoicePost {
   status: PostStatus;
   top_finding: string | null;
   findings_count: number;
+  linkedin_urn: string | null;
+  reactions_count: number;
+  engagement_score: number | null;
 }
 
 export interface SaveDraftInput {
@@ -32,6 +35,7 @@ export interface UpdatePublishedInput {
   published: string;
   edit_ratio: number;
   published_at: string;
+  linkedin_urn?: string;  // extracted from Buffer externalLink when available
 }
 
 export interface UpdateScheduledInput {
@@ -39,6 +43,13 @@ export interface UpdateScheduledInput {
   buffer_post_id: string;
   scheduled_at: string | null;
   status: PostStatus;
+}
+
+export interface UpdateEngagementInput {
+  id: string;
+  linkedin_urn: string;
+  reactions_count: number;
+  engagement_score: number;
 }
 
 export interface SlottedPost {
@@ -60,8 +71,14 @@ export interface IVoiceStorage {
   /** Mark a post as 'queued' (Buffer queue is full). */
   markQueued(id: string): Promise<void>;
 
-  /** Retrieve top published posts for voice examples, ordered by edit_ratio DESC. */
+  /** Retrieve top published posts for voice examples, ordered by engagement_score DESC NULLS LAST, edit_ratio DESC. */
   getTopVoiceExamples(platform: Platform, limit: number): Promise<VoicePost[]>;
+
+  /** Update engagement data after fetching from LinkedIn socialActions API. */
+  updateEngagement(input: UpdateEngagementInput): Promise<void>;
+
+  /** Get published posts that have a linkedin_urn but no engagement_score yet. */
+  getPostsPendingEngagement(platform: Platform): Promise<VoicePost[]>;
 
   /** Check if a commit SHA + platform already has a processed post. */
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean>;

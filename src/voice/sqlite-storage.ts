@@ -8,6 +8,7 @@ import type {
   SaveDraftInput,
   UpdatePublishedInput,
   UpdateScheduledInput,
+  UpdateEngagementInput,
   Platform,
   PostStatus,
   SlottedPost,
@@ -39,8 +40,15 @@ export class SqliteStorage implements IVoiceStorage {
         scheduled_at    TEXT,
         status          TEXT NOT NULL DEFAULT 'pending',
         top_finding     TEXT,
-        findings_count  INTEGER NOT NULL DEFAULT 0
+        findings_count  INTEGER NOT NULL DEFAULT 0,
+        linkedin_urn    TEXT,
+        reactions_count INTEGER NOT NULL DEFAULT 0,
+        engagement_score REAL
       );
+
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS linkedin_urn     TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
         ON voice_posts(commit_sha, platform);
@@ -83,9 +91,11 @@ export class SqliteStorage implements IVoiceStorage {
   updatePublished(input: UpdatePublishedInput): Promise<void> {
     this.db.prepare(`
       UPDATE voice_posts
-      SET published = ?, edit_ratio = ?, published_at = ?, status = 'published'
+      SET published = ?, edit_ratio = ?, published_at = ?, status = 'published',
+          linkedin_urn = COALESCE(?, linkedin_urn)
       WHERE id = ?
-    `).run(input.published, input.edit_ratio, input.published_at, input.id);
+    `).run(input.published, input.edit_ratio, input.published_at,
+           input.linkedin_urn ?? null, input.id);
     return Promise.resolve();
   }
 
@@ -107,9 +117,27 @@ export class SqliteStorage implements IVoiceStorage {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
       WHERE platform = ? AND status = 'published' AND edit_ratio IS NOT NULL
-      ORDER BY edit_ratio DESC
+      ORDER BY engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST
       LIMIT ?
     `).all(platform, limit) as VoicePost[];
+    return Promise.resolve(rows);
+  }
+
+  updateEngagement(input: UpdateEngagementInput): Promise<void> {
+    this.db.prepare(`
+      UPDATE voice_posts
+      SET linkedin_urn = ?, reactions_count = ?, engagement_score = ?
+      WHERE id = ?
+    `).run(input.linkedin_urn, input.reactions_count, input.engagement_score, input.id);
+    return Promise.resolve();
+  }
+
+  getPostsPendingEngagement(platform: Platform): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE platform = ? AND status = 'published'
+        AND linkedin_urn IS NOT NULL AND engagement_score IS NULL
+    `).all(platform) as VoicePost[];
     return Promise.resolve(rows);
   }
 

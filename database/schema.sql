@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS voice_posts (
   scheduled_at    TIMESTAMPTZ,             -- UTC time Buffer will publish
   status          TEXT NOT NULL DEFAULT 'pending', -- 'pending'|'scheduled'|'published'|'queued'
   top_finding     TEXT,                    -- headline of the top module finding
-  findings_count  INTEGER NOT NULL DEFAULT 0
+  findings_count  INTEGER NOT NULL DEFAULT 0,
+  linkedin_urn    TEXT,                    -- urn:li:share:... captured from Buffer externalLink
+  reactions_count INTEGER NOT NULL DEFAULT 0, -- LinkedIn reactions fetched from socialActions API
+  engagement_score REAL                   -- composite: edit_ratio*0.6 + normalized_reactions*0.4
 );
 
 -- Uninteresting commits saved for optional weekly roundup
@@ -46,8 +49,9 @@ CREATE TABLE IF NOT EXISTS scheduled_slots (
 );
 
 -- Fast retrieval of voice examples for prompt assembly
+-- engagement_score takes precedence when available; falls back to edit_ratio
 CREATE INDEX IF NOT EXISTS idx_voice_retrieval
-  ON voice_posts(platform, edit_ratio DESC)
+  ON voice_posts(platform, engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST)
   WHERE status = 'published';
 
 -- Prevent processing the same commit twice
@@ -65,3 +69,16 @@ ALTER TABLE voice_posts      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_batch    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events_state     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_slots  ENABLE ROW LEVEL SECURITY;
+
+-- ─────────────────────────────────────────────────────────
+-- MIGRATION — run this block on existing Supabase installations
+-- Safe to run multiple times (IF NOT EXISTS / IF EXISTS guards)
+-- ─────────────────────────────────────────────────────────
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS linkedin_urn     TEXT;
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
+
+DROP INDEX IF EXISTS idx_voice_retrieval;
+CREATE INDEX IF NOT EXISTS idx_voice_retrieval
+  ON voice_posts(platform, engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST)
+  WHERE status = 'published';
