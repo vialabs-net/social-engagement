@@ -52,7 +52,10 @@ export async function runPipeline(
     }
   }
 
-  const sorted = findings.sort((a, b) => b.interestScore - a.interestScore);
+  const MIN_INTEREST_SCORE = 5;
+  const sorted = findings
+    .filter((f) => f.interestScore >= MIN_INTEREST_SCORE)
+    .sort((a, b) => b.interestScore - a.interestScore);
   const top = sorted.slice(0, topN);
 
   logger.info('analysis.pipeline.done', {

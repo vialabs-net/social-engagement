@@ -5,6 +5,7 @@ interface PerformancePattern {
   readonly score: number;
   readonly technicalDetail: string;
   readonly explanation: string;
+  readonly skipOnNewFile?: boolean;
   detect(addedLines: readonly string[], filePatch: string): boolean;
 }
 
@@ -42,7 +43,8 @@ const PATTERNS: readonly PerformancePattern[] = [
     score: 8,
     technicalDetail: 'Sequential async/await inside a loop — each iteration waits for the previous one to finish instead of running in parallel.',
     explanation: 'Awaiting inside a loop means each step waits for the previous one. If the operations are independent, running them in parallel with Promise.all cuts total time dramatically.',
-    detect: (lines) => hasProximityMatch(lines, LOOP_KEYWORDS, /\bawait\s+/, 8),
+    detect: (lines) => hasProximityMatch(lines, LOOP_KEYWORDS, /\bawait\s+/, 4),
+    skipOnNewFile: true,
   },
   {
     name: 'database index creation',
@@ -56,6 +58,7 @@ const PATTERNS: readonly PerformancePattern[] = [
     score: 8,
     technicalDetail: 'Batch processing — groups multiple operations into a single call to reduce round-trips and overhead.',
     explanation: 'Instead of sending requests one by one, batching groups them into a single call. Fewer round-trips means less latency and lower resource usage.',
+    skipOnNewFile: true,
     detect: (lines) => lines.some((l) =>
       /\b(Promise\.all\(|Promise\.allSettled\(|\$in\b|\.insertMany\(|\.bulkWrite\(|\.createMany\(|\.batchWrite\()/.test(l),
     ),
@@ -119,6 +122,7 @@ export class PerformanceModule implements CodeAnalyzer {
       if (addedLines.length === 0) continue;
 
       for (const pattern of PATTERNS) {
+        if (pattern.skipOnNewFile && diff.status === 'added') continue;
         if (pattern.detect(addedLines, diff.patch)) {
           return {
             moduleId: this.id,
