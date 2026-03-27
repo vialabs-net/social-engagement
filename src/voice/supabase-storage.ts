@@ -5,6 +5,7 @@ import type {
   SaveDraftInput,
   UpdatePublishedInput,
   UpdateScheduledInput,
+  UpdateEngagementInput,
   Platform,
   PostStatus,
   SlottedPost,
@@ -79,10 +80,37 @@ export class SupabaseStorage implements IVoiceStorage {
       .eq('platform', platform)
       .eq('status', 'published')
       .not('edit_ratio', 'is', null)
-      .order('edit_ratio', { ascending: false })
+      .order('engagement_score', { ascending: false, nullsFirst: false })
+      .order('edit_ratio', { ascending: false, nullsFirst: false })
       .limit(limit);
 
     if (error) throw new Error(`getTopVoiceExamples failed: ${error.message}`);
+    return (data ?? []) as VoicePost[];
+  }
+
+  async updateEngagement(input: UpdateEngagementInput): Promise<void> {
+    const { error } = await this.db
+      .from('voice_posts')
+      .update({
+        linkedin_urn: input.linkedin_urn,
+        reactions_count: input.reactions_count,
+        engagement_score: input.engagement_score,
+      })
+      .eq('id', input.id);
+
+    if (error) throw new Error(`updateEngagement failed: ${error.message}`);
+  }
+
+  async getPostsPendingEngagement(platform: Platform): Promise<VoicePost[]> {
+    const { data, error } = await this.db
+      .from('voice_posts')
+      .select('*')
+      .eq('platform', platform)
+      .eq('status', 'published')
+      .not('linkedin_urn', 'is', null)
+      .is('engagement_score', null);
+
+    if (error) throw new Error(`getPostsPendingEngagement failed: ${error.message}`);
     return (data ?? []) as VoicePost[];
   }
 
