@@ -1,5 +1,5 @@
 import type { Finding } from '../analysis/types.js';
-import type { VoicePost, Platform } from '../voice/storage.js';
+import type { VoicePost } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { Config } from '../config/schema.js';
 
@@ -96,13 +96,13 @@ CLOSING: Direct statement. See DIRECT CLOSING device above.
 </never>
 
 <format>
-LinkedIn: 1200-1800 characters. Each sentence is its own paragraph.
+Post: 1200-1800 characters. Each sentence is its own paragraph.
   Short paragraphs with aggressive line breaks ARE the format — do NOT compress.
   3-5 hashtags at the end. Always include #lilicurl.
 
-Instagram: 150-300 words. Same voice, more storytelling.
-  Suggest a visual concept (code screenshot, before/after, diagram).
-  15-20 hashtags.
+Short version (Twitter): 3-5 staccato lines max. No hashtags. No preamble.
+  The single hook that makes someone stop. Nothing else.
+  Example: "A type guard stopped a cascading bug.\nNot a try/catch. A type guard.\nMake the bad path impossible."
 </format>`;
 }
 
@@ -110,7 +110,6 @@ export function buildUserPrompt(
   commit: EnrichedCommit,
   findings: Finding[],
   voiceExamples: VoicePost[],
-  platforms: Platform[],
   config: Config,
 ): string {
   const parts: string[] = [];
@@ -172,22 +171,19 @@ Steps:
 5. Match the rhythm and style of <voice_history> if present.
 ${websiteRef}
 
-Generate for these platforms: ${platforms.join(', ')}
-
 Wrap each draft in XML tags exactly as shown:
 
-<linkedin_draft>
+<post_draft>
 1200-1800 characters. First line earns the "see more" click.
 Each sentence is its own paragraph. Aggressive line breaks.
 3-5 hashtags at the end. Always #lilicurl.
 Direct closing — never a question CTA.
-</linkedin_draft>
+</post_draft>
 
-<instagram_draft>
-150-300 words. Same substance, more storytelling.
-Suggest a visual (code screenshot / before-after / diagram).
-15-20 hashtags.
-</instagram_draft>
+<short_draft>
+3-5 staccato lines. No hashtags. No preamble. Pure signal.
+The one hook that makes someone stop. Nothing else.
+</short_draft>
 
 SELF-CHECK before responding:
 - Does the post use specific data from the findings? (not generic)
