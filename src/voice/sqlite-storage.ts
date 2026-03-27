@@ -91,9 +91,11 @@ export class SqliteStorage implements IVoiceStorage {
   updatePublished(input: UpdatePublishedInput): Promise<void> {
     this.db.prepare(`
       UPDATE voice_posts
-      SET published = ?, edit_ratio = ?, published_at = ?, status = 'published'
+      SET published = ?, edit_ratio = ?, published_at = ?, status = 'published',
+          linkedin_urn = COALESCE(?, linkedin_urn)
       WHERE id = ?
-    `).run(input.published, input.edit_ratio, input.published_at, input.id);
+    `).run(input.published, input.edit_ratio, input.published_at,
+           input.linkedin_urn ?? null, input.id);
     return Promise.resolve();
   }
 

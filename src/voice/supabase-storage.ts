@@ -45,6 +45,7 @@ export class SupabaseStorage implements IVoiceStorage {
         edit_ratio: input.edit_ratio,
         published_at: input.published_at,
         status: 'published' satisfies PostStatus,
+        ...(input.linkedin_urn !== undefined && { linkedin_urn: input.linkedin_urn }),
       })
       .eq('id', input.id);
 

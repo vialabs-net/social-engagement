@@ -35,6 +35,7 @@ export interface UpdatePublishedInput {
   published: string;
   edit_ratio: number;
   published_at: string;
+  linkedin_urn?: string;  // extracted from Buffer externalLink when available
 }
 
 export interface UpdateScheduledInput {
