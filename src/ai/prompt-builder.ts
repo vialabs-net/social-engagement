@@ -117,10 +117,12 @@ export function buildUserPrompt(
   // Voice examples at TOP (Anthropic best practice for long context)
   if (voiceExamples.length > 0) {
     parts.push('<voice_history>');
-    parts.push(`Published posts ordered by edit ratio (1.0 = unchanged from AI draft = good match).\n`);
+    parts.push(`Published posts ordered by engagement score. edit_ratio=1.0 means unchanged. reactions= LinkedIn reactions.\n`);
     for (const post of voiceExamples) {
       const ratio = post.edit_ratio !== null ? ` edit_ratio="${post.edit_ratio.toFixed(2)}"` : '';
-      parts.push(`<published_post platform="${post.platform}"${ratio}>`);
+      const engagement = post.engagement_score !== null ? ` engagement_score="${post.engagement_score.toFixed(2)}"` : '';
+      const reactions = post.reactions_count > 0 ? ` reactions="${post.reactions_count}"` : '';
+      parts.push(`<published_post platform="${post.platform}"${ratio}${reactions}${engagement}>`);
       parts.push(post.published ?? post.ai_draft);
       parts.push('</published_post>');
     }

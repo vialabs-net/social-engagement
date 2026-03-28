@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "setup-buffer": "tsx --env-file=.env.local scripts/setup-buffer.ts",
+    "setup-linkedin": "tsx --env-file=.env.local scripts/setup-linkedin.ts",
+    "update-engagement": "tsx --env-file=.env.local scripts/update-engagement.ts",
     "bootstrap": "tsx --env-file=.env.local scripts/bootstrap-voice.ts",
     "test-analyze": "tsx --env-file=.env.local scripts/test-analyze.ts",
     "poll": "tsx --env-file=.env.local src/main-poll.ts",
