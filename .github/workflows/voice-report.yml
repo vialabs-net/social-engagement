@@ -1,0 +1,47 @@
+name: Voice Report
+
+on:
+  schedule:
+    - cron: '30 */2 * * *'   # 30 min after scan-sent-posts (runs on the hour)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write config
+        run: echo "${{ secrets.CONFIG_YAML }}" > config.yaml
+
+      - name: Generate Markdown report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/voice-report.ts > /tmp/Voice-Report.md
+
+      - name: Push to wiki
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git clone "https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.wiki.git" wiki
+          cp /tmp/Voice-Report.md wiki/Voice-Report.md
+          cd wiki
+          git config user.email "lily101288@gmail.com"
+          git config user.name "Liliana Castellanos"
+          git add Voice-Report.md
+          git diff --cached --quiet || git commit -m "update voice report $(date -u +%Y-%m-%dT%H:%M)"
+          git push

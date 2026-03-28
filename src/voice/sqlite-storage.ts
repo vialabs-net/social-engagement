@@ -141,6 +141,16 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(rows);
   }
 
+  getRecentPublished(limit: number): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE status = 'published'
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT ?
+    `).all(limit) as VoicePost[];
+    return Promise.resolve(rows);
+  }
+
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {
     const row = this.db.prepare(`
       SELECT id FROM voice_posts WHERE commit_sha = ? AND platform = ?
