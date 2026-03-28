@@ -80,6 +80,9 @@ export interface IVoiceStorage {
   /** Get published posts that have a linkedin_urn but no engagement_score yet. */
   getPostsPendingEngagement(platform: Platform): Promise<VoicePost[]>;
 
+  /** Get most recent published posts across all platforms, sorted by published_at DESC. */
+  getRecentPublished(limit: number): Promise<VoicePost[]>;
+
   /** Check if a commit SHA + platform already has a processed post. */
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean>;
 

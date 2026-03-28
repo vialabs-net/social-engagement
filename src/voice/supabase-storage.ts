@@ -115,6 +115,18 @@ export class SupabaseStorage implements IVoiceStorage {
     return (data ?? []) as VoicePost[];
   }
 
+  async getRecentPublished(limit: number): Promise<VoicePost[]> {
+    const { data, error } = await this.db
+      .from('voice_posts')
+      .select('*')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(limit);
+
+    if (error) throw new Error(`getRecentPublished failed: ${error.message}`);
+    return (data ?? []) as VoicePost[];
+  }
+
   async hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {
     const { count, error } = await this.db
       .from('voice_posts')
