@@ -28,6 +28,11 @@ import { EvolutionaryModule }    from './evolutionary.js';
 import { JsAdvancedModule }      from './js-advanced.js';
 import { ReactPatternsModule }  from './react-patterns.js';
 import { DevopsModule }         from './devops.js';
+import { PythonPatternsModule }       from './python-patterns.js';
+import { GoPatternsModule }           from './go-patterns.js';
+import { JavaPatternsModule }         from './java-patterns.js';
+import { ElixirPatternsModule }       from './elixir-patterns.js';
+import { ArchitecturePatternsModule } from './architecture-patterns.js';
 
 export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new ComplexityModule(),
@@ -49,4 +54,9 @@ export const MODULE_REGISTRY: CodeAnalyzer[] = [
   new JsAdvancedModule(),
   new ReactPatternsModule(),
   new DevopsModule(),
+  new PythonPatternsModule(),
+  new GoPatternsModule(),
+  new JavaPatternsModule(),
+  new ElixirPatternsModule(),
+  new ArchitecturePatternsModule(),
 ];

@@ -28,6 +28,8 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   '.md': 'Markdown',
   '.tf': 'Terraform',
   '.dockerfile': 'Dockerfile',
+  '.ex': 'Elixir',
+  '.exs': 'Elixir',
 };
 
 export function detectLanguage(filename: string): string | undefined {
