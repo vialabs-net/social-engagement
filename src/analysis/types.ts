@@ -17,7 +17,12 @@ export type AnalysisCategory =
   | 'evolutionary'
   | 'js_advanced'
   | 'react_patterns'
-  | 'devops';
+  | 'devops'
+  | 'python_patterns'
+  | 'go_patterns'
+  | 'java_patterns'
+  | 'elixir_patterns'
+  | 'architecture_patterns';
 
 export interface FileDiff {
   filename: string;
