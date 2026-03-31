@@ -40,6 +40,7 @@ export const ConfigSchema = z.object({
     model: z.string().default('claude-sonnet-4-6'),
     max_tokens: z.number().int().default(1600),
   }),
+  plugins: z.array(z.string()).default([]),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

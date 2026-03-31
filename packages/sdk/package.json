@@ -1,0 +1,23 @@
+{
+  "name": "devcast-sdk",
+  "version": "1.0.0",
+  "description": "TypeScript types for writing devcast analysis module plugins",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": ["devcast", "plugin", "sdk", "analysis", "github"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

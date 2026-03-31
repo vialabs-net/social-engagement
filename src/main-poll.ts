@@ -11,6 +11,8 @@ import { GitHubClient } from './github/client.js';
 import { pollNewPushEvents } from './github/events-poller.js';
 import { enrichCommit } from './github/commit-enricher.js';
 import { runPipeline } from './analysis/pipeline.js';
+import { loadPlugins } from './analysis/plugin-loader.js';
+import { MODULE_REGISTRY } from './analysis/modules/index.js';
 import { AnthropicClient } from './ai/client.js';
 import { generatePosts } from './ai/post-generator.js';
 import { BufferClient } from './buffer/client.js';
@@ -23,6 +25,9 @@ import type { IVoiceStorage } from './voice/storage.js';
 async function main(): Promise<void> {
   const config = loadConfig();
   logger.info('poll.start', { username: config.author.github_username });
+
+  const plugins = await loadPlugins(config.plugins);
+  const modules = plugins.length > 0 ? [...MODULE_REGISTRY, ...plugins] : MODULE_REGISTRY;
 
   // Storage: Supabase in production (service_role key), SQLite locally
   const storage: IVoiceStorage = process.env['SUPABASE_URL']
@@ -103,6 +108,7 @@ async function main(): Promise<void> {
       const findings = await runPipeline(
         { diffs: commit.diffs, commitMessage: commit.message, languages: commit.languages, repo: commit.repo, sha: commit.sha },
         config.posting.analysis_top_n,
+        modules,
       );
 
       if (findings.length === 0) {

@@ -37,3 +37,11 @@ posting:
 ai:
   model: "claude-sonnet-4-6"
   max_tokens: 1600
+
+# Optional: npm packages that extend devcast with custom analysis modules.
+# Each package must export a named `module` implementing CodeAnalyzer (devcast-sdk).
+# Install them first: npm install devcast-module-rust
+plugins: []
+# plugins:
+#   - devcast-module-rust
+#   - devcast-module-django
