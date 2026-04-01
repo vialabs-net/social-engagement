@@ -59,6 +59,42 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_posts_sha_platform
   ON voice_posts(commit_sha, platform);
 
 -- ─────────────────────────────────────────────────────────
+-- MARKETPLACE — multi-tenant tables
+-- ─────────────────────────────────────────────────────────
+
+-- One row per GitHub App installation (one tenant per GitHub user/org)
+CREATE TABLE IF NOT EXISTS tenants (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  github_installation_id  BIGINT NOT NULL UNIQUE,  -- GitHub App installation ID
+  github_username         TEXT NOT NULL UNIQUE,    -- installing user/org login
+  plan                    TEXT NOT NULL DEFAULT 'free',
+  active                  BOOLEAN NOT NULL DEFAULT TRUE,
+  buffer_access_token     TEXT,                    -- encrypted, set during onboarding
+  config                  JSONB NOT NULL DEFAULT '{}',
+  voice_bootstrap         TEXT                     -- raw posts pasted during onboarding
+);
+
+-- Async job queue — webhook enqueues, worker picks up
+CREATE TABLE IF NOT EXISTS job_queue (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tenant_id   UUID NOT NULL REFERENCES tenants(id),
+  repo        TEXT NOT NULL,                       -- 'owner/repo'
+  before_sha  TEXT NOT NULL,                       -- push event before SHA
+  after_sha   TEXT NOT NULL,                       -- push event after SHA
+  ref         TEXT NOT NULL,                       -- e.g. 'refs/heads/main'
+  status      TEXT NOT NULL DEFAULT 'pending',     -- 'pending'|'processing'|'done'|'failed'
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  error       TEXT,
+  processed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_queue_pending
+  ON job_queue(created_at ASC)
+  WHERE status = 'pending';
+
+-- ─────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
 -- ─────────────────────────────────────────────────────────
 -- Enable RLS on all tables. No public policies = anon key has zero access.
@@ -69,6 +105,8 @@ ALTER TABLE voice_posts      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_batch    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events_state     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_slots  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE job_queue        ENABLE ROW LEVEL SECURITY;
 
 -- ─────────────────────────────────────────────────────────
 -- MIGRATION — run this block on existing Supabase installations
