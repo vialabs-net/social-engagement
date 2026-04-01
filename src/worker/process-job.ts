@@ -187,7 +187,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const { bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config);
+      const { bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds);
 
       // Only publish to Buffer if the tenant has configured their token
       if (tenant.buffer_access_token) {
