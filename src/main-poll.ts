@@ -120,7 +120,7 @@ async function main(): Promise<void> {
 
       // Generate post (ONE Claude call — returns full post + Twitter short variant)
       const { bufferText, draftId } = await generatePosts(
-        anthropic, commit, findings, storage, config,
+        anthropic, commit, findings, storage, config, recentModuleIds,
       );
 
       // Publish ONE Buffer Idea with both variants in the text

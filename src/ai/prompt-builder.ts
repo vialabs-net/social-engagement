@@ -111,6 +111,7 @@ export function buildUserPrompt(
   findings: Finding[],
   voiceExamples: VoicePost[],
   config: Config,
+  recentModuleIds: string[] = [],
 ): string {
   const parts: string[] = [];
 
@@ -155,6 +156,22 @@ export function buildUserPrompt(
     parts.push('</finding>');
   }
   parts.push('</module_findings>\n');
+
+  // Module variety hint — tells Claude which topics have appeared recently
+  if (recentModuleIds.length > 0) {
+    const counts = new Map<string, number>();
+    for (const id of recentModuleIds) {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => (n > 1 ? `${id} ×${n}` : id))
+      .join(', ');
+    parts.push(`<module_variety_hint>
+Recent posts covered these analysis modules (most frequent first): ${ranked}.
+If the top finding above is from a frequently repeated module, use a fresh angle — different metaphor, different structural pattern, or highlight a different aspect. The technical content differs, but repeated framing makes posts feel similar.
+</module_variety_hint>\n`);
+  }
 
   // Task at BOTTOM
   const websiteRef = config.author.website
