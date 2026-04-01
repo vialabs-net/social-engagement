@@ -15,6 +15,7 @@ export async function runPipeline(
   ctx: AnalysisContext,
   topN = 3,
   modules: CodeAnalyzer[] = MODULE_REGISTRY,
+  recentModuleIds: string[] = [],
 ): Promise<Finding[]> {
   const applicableModules = modules.filter(mod => {
     if (!mod.applicableLanguages) return true;
@@ -52,17 +53,34 @@ export async function runPipeline(
     }
   }
 
+  // Freshness multiplier: penalise modules that fired recently.
+  // adjustedScore = interestScore / (fires_in_window + 1)
+  // A module that fired 3 times recently gets score ÷ 4, making room for others.
+  const fireCounts = new Map<string, number>();
+  for (const id of recentModuleIds) {
+    fireCounts.set(id, (fireCounts.get(id) ?? 0) + 1);
+  }
+
   const MIN_INTEREST_SCORE = 5;
   const sorted = findings
     .filter((f) => f.interestScore >= MIN_INTEREST_SCORE)
-    .sort((a, b) => b.interestScore - a.interestScore);
+    .map((f) => ({
+      finding: f,
+      adjustedScore: f.interestScore / ((fireCounts.get(f.moduleId) ?? 0) + 1),
+    }))
+    .sort((a, b) => b.adjustedScore - a.adjustedScore)
+    .map((x) => x.finding);
   const top = sorted.slice(0, topN);
 
   logger.info('analysis.pipeline.done', {
     sha: ctx.sha,
     findingsTotal: findings.length,
     findingsSelected: top.length,
-    scores: top.map(f => ({ module: f.moduleId, score: f.interestScore })),
+    scores: top.map(f => ({
+      module: f.moduleId,
+      score: f.interestScore,
+      adjusted: f.interestScore / ((fireCounts.get(f.moduleId) ?? 0) + 1),
+    })),
   });
 
   return top;

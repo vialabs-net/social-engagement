@@ -27,6 +27,7 @@ export interface SaveDraftInput {
   platform: Platform;
   ai_draft: string;
   top_finding?: string;
+  top_module_id?: string;
   findings_count?: number;
 }
 
@@ -85,6 +86,12 @@ export interface IVoiceStorage {
 
   /** Check if a commit SHA + platform already has a processed post. */
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean>;
+
+  /**
+   * Returns the top_module_id values for posts created in the last `days` days.
+   * Used by the pipeline to apply the freshness multiplier to recently-fired modules.
+   */
+  getRecentModuleIds(days: number): Promise<string[]>;
 
   /** Get all posts with status='queued' for a given platform. */
   getQueuedPosts(platform: Platform): Promise<VoicePost[]>;
