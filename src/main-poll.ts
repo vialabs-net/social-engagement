@@ -104,11 +104,13 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Run analysis modules
+      // Run analysis modules (freshness multiplier uses last 30 days of module history)
+      const recentModuleIds = await storage.getRecentModuleIds(30);
       const findings = await runPipeline(
         { diffs: commit.diffs, commitMessage: commit.message, languages: commit.languages, repo: commit.repo, sha: commit.sha },
         config.posting.analysis_top_n,
         modules,
+        recentModuleIds,
       );
 
       if (findings.length === 0) {

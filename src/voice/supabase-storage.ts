@@ -27,6 +27,7 @@ export class SupabaseStorage implements IVoiceStorage {
         platform: input.platform,
         ai_draft: input.ai_draft,
         top_finding: input.top_finding ?? null,
+        top_module_id: input.top_module_id ?? null,
         findings_count: input.findings_count ?? 0,
         status: 'pending' satisfies PostStatus,
       })
@@ -125,6 +126,18 @@ export class SupabaseStorage implements IVoiceStorage {
 
     if (error) throw new Error(`getRecentPublished failed: ${error.message}`);
     return (data ?? []) as VoicePost[];
+  }
+
+  async getRecentModuleIds(days: number): Promise<string[]> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.db
+      .from('voice_posts')
+      .select('top_module_id')
+      .gte('created_at', since)
+      .not('top_module_id', 'is', null);
+
+    if (error) throw new Error(`getRecentModuleIds failed: ${error.message}`);
+    return (data ?? []).map((r) => (r as { top_module_id: string }).top_module_id);
   }
 
   async hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {

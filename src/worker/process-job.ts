@@ -168,6 +168,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
+      const recentModuleIds = await storage.getRecentModuleIds(30);
       const findings = await runPipeline(
         {
           diffs: commit.diffs,
@@ -178,6 +179,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         },
         config.posting.analysis_top_n,
         MODULE_REGISTRY,
+        recentModuleIds,
       );
 
       if (findings.length === 0) {

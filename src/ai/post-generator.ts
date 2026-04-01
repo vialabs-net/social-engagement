@@ -43,6 +43,7 @@ export async function generatePosts(
   const { post, shortPost } = parseResponse(rawResponse);
 
   const topFinding = findings[0]?.finding;
+  const topModuleId = findings[0]?.moduleId;
   const findingsCount = findings.length;
 
   // One record per commit — ai_draft stores the full post for voice training
@@ -52,6 +53,7 @@ export async function generatePosts(
     platform: 'linkedin',
     ai_draft: post,
     top_finding: topFinding,
+    top_module_id: topModuleId,
     findings_count: findingsCount,
   });
 

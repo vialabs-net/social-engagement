@@ -3,7 +3,6 @@ import { logger } from '../utils/logger.js';
 import { processJob } from './process-job.js';
 import type { ProcessJobDeps } from './process-job.js';
 
-const POLL_INTERVAL_MS = 30_000;
 const MAX_ATTEMPTS = 3;
 
 const SUPABASE_URL = process.env['SUPABASE_URL'] ?? '';
@@ -41,8 +40,6 @@ const deps: ProcessJobDeps = {
  * 1. SELECT the candidate
  * 2. UPDATE WHERE status='pending' (optimistic guard against race)
  *
- * With a single Cloud Run instance this race never occurs, but the guard
- * is cheap and keeps the code correct if a second worker is ever added.
  * Attempts are NOT incremented here — markFailed handles the increment.
  */
 async function claimJob(): Promise<string | null> {
@@ -67,7 +64,7 @@ async function claimJob(): Promise<string | null> {
     .from('job_queue')
     .update({ status: 'processing' })
     .eq('id', jobId)
-    .eq('status', 'pending')  // guard: only claim if still pending
+    .eq('status', 'pending')
     .select('id')
     .maybeSingle();
 
@@ -89,7 +86,6 @@ async function markDone(jobId: string): Promise<void> {
 }
 
 async function markFailed(jobId: string, errorMessage: string): Promise<void> {
-  // Fetch current attempts to increment and decide final status
   const { data, error: fetchError } = await db
     .from('job_queue')
     .select('attempts')
@@ -118,43 +114,34 @@ async function markFailed(jobId: string, errorMessage: string): Promise<void> {
   else logger.info('worker.job.marked_failed', { jobId, newAttempts, newStatus });
 }
 
-async function runOnce(): Promise<void> {
-  const jobId = await claimJob();
-  if (!jobId) return;
+/**
+ * Processes all pending jobs in one pass, then exits.
+ * Cloud Scheduler triggers this via Cloud Run Jobs every minute.
+ */
+async function processAllPending(): Promise<void> {
+  let processed = 0;
 
-  try {
-    await processJob(jobId, deps);
-    await markDone(jobId);
-  } catch (err) {
-    logger.error('worker.job.error', { jobId, error: String(err) });
-    await markFailed(jobId, String(err));
-  }
-}
+  while (true) {
+    const jobId = await claimJob();
+    if (!jobId) break;
 
-let running = true;
-
-async function main(): Promise<void> {
-  logger.info('worker.start', { pollIntervalMs: POLL_INTERVAL_MS, maxAttempts: MAX_ATTEMPTS });
-
-  while (running) {
-    await runOnce();
-    if (running) {
-      await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    try {
+      await processJob(jobId, deps);
+      await markDone(jobId);
+      processed++;
+    } catch (err) {
+      logger.error('worker.job.error', { jobId, error: String(err) });
+      await markFailed(jobId, String(err));
     }
   }
 
-  logger.info('worker.stopped');
+  logger.info('worker.run.complete', { processed });
 }
 
-process.on('SIGTERM', () => {
-  logger.info('worker.shutdown');
-  running = false;
-});
-
-process.on('SIGINT', () => {
-  logger.info('worker.shutdown');
-  running = false;
-});
+async function main(): Promise<void> {
+  logger.info('worker.start', { maxAttempts: MAX_ATTEMPTS });
+  await processAllPending();
+}
 
 main().catch((err) => {
   logger.error('worker.fatal', { error: String(err) });

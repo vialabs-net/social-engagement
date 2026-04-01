@@ -49,6 +49,7 @@ export class SqliteStorage implements IVoiceStorage {
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS linkedin_urn     TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS top_module_id    TEXT;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
         ON voice_posts(commit_sha, platform);
@@ -81,11 +82,20 @@ export class SqliteStorage implements IVoiceStorage {
   saveDraft(input: SaveDraftInput): Promise<string> {
     const id = randomUUID();
     this.db.prepare(`
-      INSERT INTO voice_posts (id, commit_sha, repo, platform, ai_draft, top_finding, findings_count, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO voice_posts (id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(id, input.commit_sha, input.repo, input.platform, input.ai_draft,
-           input.top_finding ?? null, input.findings_count ?? 0);
+           input.top_finding ?? null, input.top_module_id ?? null, input.findings_count ?? 0);
     return Promise.resolve(id);
+  }
+
+  getRecentModuleIds(days: number): Promise<string[]> {
+    const rows = this.db.prepare(`
+      SELECT top_module_id FROM voice_posts
+      WHERE created_at >= datetime('now', '-' || ? || ' days')
+        AND top_module_id IS NOT NULL
+    `).all(days) as { top_module_id: string }[];
+    return Promise.resolve(rows.map((r) => r.top_module_id));
   }
 
   updatePublished(input: UpdatePublishedInput): Promise<void> {
