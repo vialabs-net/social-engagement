@@ -9,6 +9,7 @@
     "update-engagement": "tsx --env-file=.env.local scripts/update-engagement.ts",
     "bootstrap": "tsx --env-file=.env.local scripts/bootstrap-voice.ts",
     "test-analyze": "tsx --env-file=.env.local scripts/test-analyze.ts",
+    "webhook": "tsx --env-file=.env.local src/webhook/server.ts",
     "poll": "tsx --env-file=.env.local src/main-poll.ts",
     "scan": "tsx --env-file=.env.local src/main-scan.ts",
     "gen-image-prompt": "tsx --env-file=.env.local scripts/gen-image-prompt.ts",
