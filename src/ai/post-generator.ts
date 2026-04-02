@@ -8,7 +8,9 @@ import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { Config } from '../config/schema.js';
 
 export interface GeneratedPosts {
-  bufferText: string;
+  linkedinPost: string;   // clean LinkedIn text for direct posting
+  shortPost: string;      // short variant for Twitter/X
+  bufferText: string;     // combined text for Buffer Idea
   draftId: string;
 }
 
@@ -63,7 +65,7 @@ export async function generatePosts(
 
   logger.info('ai.generate.done', { sha: commit.sha, draftId });
 
-  return { bufferText, draftId };
+  return { linkedinPost: post, shortPost, bufferText, draftId };
 }
 
 function parseResponse(raw: string): { post: string; shortPost: string } {
