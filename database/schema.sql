@@ -70,7 +70,10 @@ CREATE TABLE IF NOT EXISTS tenants (
   github_username         TEXT NOT NULL UNIQUE,    -- installing user/org login
   plan                    TEXT NOT NULL DEFAULT 'free',
   active                  BOOLEAN NOT NULL DEFAULT TRUE,
-  buffer_access_token     TEXT,                    -- encrypted, set during onboarding
+  buffer_access_token     TEXT,                    -- set during onboarding (paste API key)
+  linkedin_access_token   TEXT,                    -- OAuth 2.0 access token
+  linkedin_member_id      TEXT,                    -- urn:li:person:{id}
+  linkedin_token_expires_at TIMESTAMPTZ,           -- token TTL (~2 months)
   config                  JSONB NOT NULL DEFAULT '{}',
   voice_bootstrap         TEXT                     -- raw posts pasted during onboarding
 );
@@ -115,6 +118,10 @@ ALTER TABLE job_queue        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS linkedin_urn     TEXT;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_access_token     TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_member_id        TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_token_expires_at TIMESTAMPTZ;
 
 DROP INDEX IF EXISTS idx_voice_retrieval;
 CREATE INDEX IF NOT EXISTS idx_voice_retrieval

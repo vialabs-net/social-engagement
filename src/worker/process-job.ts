@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { GitHubClient } from '../github/client.js';
+import { LinkedInClient, LinkedInAuthExpiredError } from '../linkedin/client.js';
 import { enrichCommit } from '../github/commit-enricher.js';
 import { isInteresting } from '../utils/commit-filter.js';
 import { runPipeline } from '../analysis/pipeline.js';
@@ -20,6 +21,8 @@ interface TenantRow {
   readonly github_installation_id: number;
   readonly github_username: string;
   readonly buffer_access_token: string | null;
+  readonly linkedin_access_token: string | null;
+  readonly linkedin_member_id: string | null;
   readonly config: Record<string, unknown>;
 }
 
@@ -94,7 +97,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 
   const { data: tenantData, error: tenantError } = await deps.db
     .from('tenants')
-    .select('id, github_installation_id, github_username, buffer_access_token, config')
+    .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, linkedin_member_id, config')
     .eq('id', job.tenant_id)
     .single();
 
@@ -187,9 +190,26 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const { bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds);
+      const { linkedinPost, bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds);
 
-      // Only publish to Buffer if the tenant has configured their token
+      // Post directly to LinkedIn if connected
+      if (tenant.linkedin_access_token && tenant.linkedin_member_id) {
+        try {
+          const linkedinClient = new LinkedInClient(tenant.linkedin_access_token);
+          await linkedinClient.post(tenant.linkedin_member_id, linkedinPost);
+          logger.info('worker.commit.linkedin_posted', { sha: commit.sha });
+        } catch (err) {
+          if (err instanceof LinkedInAuthExpiredError) {
+            logger.warn('worker.commit.linkedin_expired', { sha: commit.sha });
+          } else {
+            logger.error('worker.commit.linkedin_error', { sha: commit.sha, error: String(err) });
+          }
+        }
+      } else {
+        logger.info('worker.commit.linkedin_skipped', { sha: commit.sha, reason: 'no linkedin token' });
+      }
+
+      // Create Buffer Idea if configured (for Instagram or as backup)
       if (tenant.buffer_access_token) {
         const bufferClient = new BufferClient(tenant.buffer_access_token);
         const publishResult = await publishToBuffer(
