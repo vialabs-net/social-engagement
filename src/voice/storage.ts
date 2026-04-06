@@ -60,6 +60,9 @@ export interface SlottedPost {
 }
 
 export interface IVoiceStorage {
+  /** The tenant this storage instance is scoped to. All queries filter by this. */
+  readonly tenantId: string;
+
   /** Save an AI draft immediately after generation. Returns the new row ID. */
   saveDraft(input: SaveDraftInput): Promise<string>;
 

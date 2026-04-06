@@ -30,9 +30,11 @@ async function main(): Promise<void> {
   const modules = plugins.length > 0 ? [...MODULE_REGISTRY, ...plugins] : MODULE_REGISTRY;
 
   // Storage: Supabase in production (service_role key), SQLite locally
+  // TENANT_ID env var required for Supabase (multi-tenant). Defaults to 'local' for SQLite.
+  const tenantId = process.env['TENANT_ID'] ?? 'local';
   const storage: IVoiceStorage = process.env['SUPABASE_URL']
-    ? new SupabaseStorage(process.env['SUPABASE_URL'], process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '')
-    : new SqliteStorage(process.env['SQLITE_PATH'] ?? 'data/devcast.db');
+    ? new SupabaseStorage(process.env['SUPABASE_URL'], process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '', tenantId)
+    : new SqliteStorage(process.env['SQLITE_PATH'] ?? 'data/devcast.db', tenantId);
 
   const github = new GitHubClient(process.env['GITHUB_TOKEN'] ?? '');
   const anthropic = new AnthropicClient(

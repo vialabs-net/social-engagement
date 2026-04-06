@@ -41,3 +41,11 @@ jobs:
             --image "$IMAGE" \
             --region us-central1 \
             --project lilicurl
+
+      - name: Deploy worker job
+        run: |
+          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
+          gcloud run jobs update devcast-worker \
+            --image "$IMAGE" \
+            --region us-central1 \
+            --project lilicurl

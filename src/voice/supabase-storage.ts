@@ -13,9 +13,11 @@ import type {
 
 export class SupabaseStorage implements IVoiceStorage {
   private readonly db: SupabaseClient;
+  readonly tenantId: string;
 
-  constructor(url: string, anonKey: string) {
+  constructor(url: string, anonKey: string, tenantId: string) {
     this.db = createClient(url, anonKey);
+    this.tenantId = tenantId;
   }
 
   async saveDraft(input: SaveDraftInput): Promise<string> {
@@ -30,6 +32,7 @@ export class SupabaseStorage implements IVoiceStorage {
         top_module_id: input.top_module_id ?? null,
         findings_count: input.findings_count ?? 0,
         status: 'pending' satisfies PostStatus,
+        tenant_id: this.tenantId,
       })
       .select('id')
       .single();
@@ -79,6 +82,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('platform', platform)
       .eq('status', 'published')
       .not('edit_ratio', 'is', null)
@@ -107,6 +111,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('platform', platform)
       .eq('status', 'published')
       .not('linkedin_urn', 'is', null)
@@ -120,6 +125,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('status', 'published')
       .order('published_at', { ascending: false, nullsFirst: false })
       .limit(limit);
@@ -133,6 +139,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('top_module_id')
+      .eq('tenant_id', this.tenantId)
       .gte('created_at', since)
       .not('top_module_id', 'is', null);
 
@@ -144,6 +151,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { count, error } = await this.db
       .from('voice_posts')
       .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', this.tenantId)
       .eq('commit_sha', commit_sha)
       .eq('platform', platform);
 
@@ -155,6 +163,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('platform', platform)
       .eq('status', 'queued')
       .order('created_at', { ascending: true });
@@ -167,6 +176,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('voice_posts')
       .select('*')
+      .eq('tenant_id', this.tenantId)
       .eq('platform', platform)
       .eq('status', 'scheduled')
       .is('published', null)
