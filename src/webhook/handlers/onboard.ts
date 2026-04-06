@@ -25,13 +25,13 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
 
   const linkedinConnected = !!tenant.linkedin_member_id;
   const linkedinSection = linkedinConnected
-    ? `<p class="connected">✓ LinkedIn connected</p>
+    ? `<div class="connected"><span class="dot"></span>LinkedIn connected</div>
        <a href="/auth/linkedin?installation_id=${installationId}" class="link-small">Reconnect</a>`
     : `<a href="/auth/linkedin?installation_id=${installationId}" class="btn-linkedin">Connect LinkedIn</a>
-       <p class="hint">Allows devcast to post directly to your LinkedIn feed.</p>`;
+       <p class="hint-card">Allows devcast to post directly to your LinkedIn feed.</p>`;
 
   const banner = saved
-    ? `<div class="banner">Saved successfully.</div>`
+    ? `<div class="banner"><span class="dot"></span>Saved successfully.</div>`
     : '';
 
   return `<!DOCTYPE html>
@@ -40,58 +40,71 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>devcast — Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    *{box-sizing:border-box}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:60px auto;padding:0 20px;color:#111;line-height:1.5}
-    h1{font-size:1.4rem;margin-bottom:2px}
-    .sub{color:#666;margin-top:0;margin-bottom:28px}
-    .section{margin-bottom:28px}
-    .section-title{font-weight:600;font-size:.95rem;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:14px}
-    label{display:block;font-size:.85rem;font-weight:500;margin-bottom:3px}
-    input{width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem;margin-bottom:14px}
-    .hint{font-size:.78rem;color:#888;margin-top:-10px;margin-bottom:14px}
-    .optional{color:#aaa;font-weight:400;font-size:.78rem;margin-left:3px}
-    button{background:#000;color:#fff;border:none;padding:9px 20px;border-radius:6px;font-size:.9rem;cursor:pointer}
-    button:hover{background:#333}
-    .btn-linkedin{display:inline-block;background:#0077B5;color:#fff;padding:9px 20px;border-radius:6px;font-size:.9rem;text-decoration:none}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;background:#09090b;color:#f4f4f5;min-height:100vh;line-height:1.5}
+    nav{border-bottom:1px solid #27272a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-weight:600;font-size:.95rem;letter-spacing:-.02em;color:#fff}
+    .account-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid #27272a;background:#18181b;padding:4px 12px;border-radius:9999px;font-size:.75rem;color:#a1a1aa}
+    .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;flex-shrink:0}
+    main{max-width:480px;margin:48px auto;padding:0 24px 48px}
+    h1{font-size:1.5rem;font-weight:600;color:#fff;letter-spacing:-.02em;margin-bottom:4px}
+    .sub{font-size:.875rem;color:#71717a;margin-bottom:32px}
+    .banner{display:flex;align-items:center;gap:8px;background:#052e16;border:1px solid #166534;color:#4ade80;padding:10px 14px;border-radius:8px;margin-bottom:24px;font-size:.875rem}
+    .card{background:#18181b;border:1px solid #27272a;border-radius:12px;padding:24px;margin-bottom:16px}
+    .section-title{font-size:.875rem;font-weight:600;color:#fff;margin-bottom:16px}
+    .optional{color:#52525b;font-weight:400}
+    label{display:block;font-size:.8rem;font-weight:500;color:#a1a1aa;margin-bottom:6px}
+    input[type=text],input[type=url]{width:100%;padding:8px 12px;background:#09090b;border:1px solid #27272a;border-radius:8px;font-size:.875rem;color:#f4f4f5;font-family:inherit;margin-bottom:16px;outline:none;transition:border-color .15s}
+    input[type=text]:focus,input[type=url]:focus{border-color:#52525b}
+    input::placeholder{color:#3f3f46}
+    .hint{font-size:.75rem;color:#52525b;margin-top:-12px;margin-bottom:16px}
+    .hint-card{font-size:.75rem;color:#52525b;margin-top:10px}
+    .btn-primary{background:#fff;color:#09090b;border:none;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s}
+    .btn-primary:hover{background:#e4e4e7}
+    .btn-linkedin{display:inline-flex;align-items:center;gap:8px;background:#0077B5;color:#fff;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;text-decoration:none;transition:background .15s}
     .btn-linkedin:hover{background:#005f8e}
-    .connected{color:#16a34a;font-weight:500;margin:0}
-    .link-small{font-size:.8rem;color:#666}
-    .banner{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px 14px;border-radius:6px;margin-bottom:20px;font-size:.875rem}
+    .connected{display:inline-flex;align-items:center;gap:6px;color:#34d399;font-size:.875rem;font-weight:500}
+    .link-small{font-size:.8rem;color:#52525b;text-decoration:none;margin-left:12px;transition:color .15s}
+    .link-small:hover{color:#a1a1aa}
   </style>
 </head>
 <body>
-  <h1>devcast setup</h1>
-  <p class="sub">GitHub account: <strong>${tenant.github_username}</strong></p>
-  ${banner}
-  <form method="POST" action="/onboard">
-    <input type="hidden" name="installation_id" value="${installationId}">
-
-    <div class="section">
-      <div class="section-title">About you</div>
-      <label>Name <span class="optional">(used in posts)</span></label>
-      <input type="text" name="name" value="${name}" placeholder="Your Name" required>
-      <label>Website <span class="optional">optional</span></label>
-      <input type="url" name="website" value="${website}" placeholder="https://yoursite.com">
+  <nav>
+    <span class="logo">devcast</span>
+    <span class="account-badge"><span class="dot"></span>${tenant.github_username}</span>
+  </nav>
+  <main>
+    <h1>Setup</h1>
+    <p class="sub">Configure how devcast generates posts for you.</p>
+    ${banner}
+    <form method="POST" action="/onboard">
+      <input type="hidden" name="installation_id" value="${installationId}">
+      <div class="card">
+        <div class="section-title">About you</div>
+        <label>Name <span class="optional">(used in posts)</span></label>
+        <input type="text" name="name" value="${name}" placeholder="Your Name" required>
+        <label>Website <span class="optional">optional</span></label>
+        <input type="url" name="website" value="${website}" placeholder="https://yoursite.com">
+      </div>
+      <div class="card">
+        <div class="section-title">Buffer <span class="optional">optional</span></div>
+        <label>API key</label>
+        <input type="text" name="buffer_access_token" value="${maskToken(tenant.buffer_access_token)}" placeholder="Paste your Buffer API key">
+        <p class="hint">Get it at publish.buffer.com → Settings → API</p>
+        <label>Organization ID</label>
+        <input type="text" name="buffer_org_id" value="${bufferOrgId}" placeholder="org_...">
+        <p class="hint">Required to create Buffer Ideas. Leave blank if using LinkedIn direct only.</p>
+      </div>
+      <button type="submit" class="btn-primary">Save</button>
+    </form>
+    <div class="card" style="margin-top:16px">
+      <div class="section-title">LinkedIn</div>
+      ${linkedinSection}
     </div>
-
-    <div class="section">
-      <div class="section-title">Buffer <span class="optional">optional</span></div>
-      <label>API key</label>
-      <input type="text" name="buffer_access_token" value="${maskToken(tenant.buffer_access_token)}" placeholder="Paste your Buffer API key">
-      <p class="hint">Get it at publish.buffer.com → Settings → API</p>
-      <label>Organization ID</label>
-      <input type="text" name="buffer_org_id" value="${bufferOrgId}" placeholder="org_...">
-      <p class="hint">Required to create Buffer Ideas. Leave blank if using LinkedIn direct only.</p>
-    </div>
-
-    <button type="submit">Save</button>
-  </form>
-
-  <div class="section" style="margin-top:32px">
-    <div class="section-title">LinkedIn</div>
-    ${linkedinSection}
-  </div>
+  </main>
 </body>
 </html>`;
 }
