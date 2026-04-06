@@ -23,7 +23,10 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
   const name = (author['name'] as string | undefined) ?? tenant.github_username;
   const website = (author['website'] as string | undefined) ?? '';
   const bufferOrgId = (buffer['organization_id'] as string | undefined) ?? '';
-  const voiceBootstrap = tenant.voice_bootstrap ?? '';
+  const voiceParts = (tenant.voice_bootstrap ?? '').split('\n---\n');
+  const voice1 = voiceParts[0]?.trim() ?? '';
+  const voice2 = voiceParts[1]?.trim() ?? '';
+  const voice3 = voiceParts[2]?.trim() ?? '';
 
   const linkedinConnected = !!tenant.linkedin_member_id;
   const linkedinSection = linkedinConnected
@@ -79,7 +82,7 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
 </head>
 <body>
   <nav>
-    <img src="/favicon.png" alt="devcast" style="height:24px">
+    <span style="display:inline-flex;align-items:center;gap:8px"><img src="/favicon.png" alt="" style="height:20px;border-radius:4px"><span class="logo">devcast</span></span>
     <span class="account-badge"><span class="dot"></span>${tenant.github_username}</span>
   </nav>
   <main>
@@ -97,9 +100,13 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
       </div>
       <div class="card">
         <div class="section-title">Your voice <span class="optional">recommended</span></div>
-        <label>Paste 2-3 posts you've written before</label>
-        <textarea name="voice_bootstrap" rows="6" placeholder="Paste any LinkedIn post, blog excerpt, or text that sounds like you. This teaches devcast your writing voice.">${voiceBootstrap}</textarea>
-        <p class="hint">devcast learns your tone, style, and personality from these examples. Better examples = posts that sound more like you.</p>
+        <p class="hint-card">Paste posts you've written before. devcast learns your tone and personality from these.</p>
+        <label>A post where you explained something technical</label>
+        <textarea name="voice_1" rows="4" placeholder="e.g. a LinkedIn post about a technical decision, a bug you solved, or a pattern you implemented">${voice1}</textarea>
+        <label>A post where you told a story about your work</label>
+        <textarea name="voice_2" rows="4" placeholder="e.g. a lesson learned, a project milestone, or something that surprised you">${voice2}</textarea>
+        <label>A post you liked how it turned out <span class="optional">optional</span></label>
+        <textarea name="voice_3" rows="4" placeholder="e.g. any post that got good reactions or that you feel represents your voice well">${voice3}</textarea>
       </div>
       <div class="card">
         <div class="section-title">Buffer <span class="optional">optional</span></div>
@@ -160,7 +167,10 @@ export async function handleOnboardPost(
   const website = params.get('website')?.trim() ?? '';
   const bufferToken = params.get('buffer_access_token')?.trim() ?? '';
   const bufferOrgId = params.get('buffer_org_id')?.trim() ?? '';
-  const voiceBootstrap = params.get('voice_bootstrap')?.trim() ?? '';
+  const voice1 = params.get('voice_1')?.trim() ?? '';
+  const voice2 = params.get('voice_2')?.trim() ?? '';
+  const voice3 = params.get('voice_3')?.trim() ?? '';
+  const voiceBootstrap = [voice1, voice2, voice3].filter(Boolean).join('\n---\n');
 
   if (isNaN(installationId) || !name) {
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=missing_fields` };
