@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { handleGithubWebhook } from './github-handler.js';
 import { handleOnboardGet, handleOnboardPost } from './handlers/onboard.js';
 import { handleLinkedInRedirect, handleLinkedInCallback } from './handlers/linkedin-oauth.js';
+import { handleGitHubCallback } from './handlers/github-oauth.js';
 import { logger } from '../utils/logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
@@ -12,6 +13,8 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? ''
 const LINKEDIN_CLIENT_ID = process.env['LINKEDIN_CLIENT_ID'] ?? '';
 const LINKEDIN_CLIENT_SECRET = process.env['LINKEDIN_CLIENT_SECRET'] ?? '';
 const APP_BASE_URL = process.env['APP_BASE_URL'] ?? '';
+const GITHUB_APP_CLIENT_ID = process.env['GITHUB_APP_CLIENT_ID'] ?? '';
+const GITHUB_APP_CLIENT_SECRET = process.env['GITHUB_APP_CLIENT_SECRET'] ?? '';
 
 if (!WEBHOOK_SECRET) {
   logger.error('server.missing_env', { var: 'GITHUB_WEBHOOK_SECRET' });
@@ -79,6 +82,28 @@ const server = createServer((req, res) => {
           res.end('Internal error');
         });
     });
+    return;
+  }
+
+  // GitHub App OAuth — callback after installation
+  if (req.method === 'GET' && path === '/auth/github/callback') {
+    const code = query.get('code') ?? '';
+    const installationId = parseInt(query.get('installation_id') ?? '', 10);
+    if (!code || isNaN(installationId) || !GITHUB_APP_CLIENT_ID || !GITHUB_APP_CLIENT_SECRET) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Invalid callback parameters');
+      return;
+    }
+    handleGitHubCallback(code, installationId, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET)
+      .then(({ status, location }) => {
+        res.writeHead(status, { Location: location });
+        res.end();
+      })
+      .catch((err: unknown) => {
+        logger.error('server.github_callback_error', { error: String(err) });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal error');
+      });
     return;
   }
 
