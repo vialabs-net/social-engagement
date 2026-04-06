@@ -16,11 +16,13 @@ import type {
 
 export class SqliteStorage implements IVoiceStorage {
   private readonly db: Database.Database;
+  readonly tenantId: string;
 
-  constructor(dbPath = 'data/devcast.db') {
+  constructor(dbPath = 'data/devcast.db', tenantId = 'local') {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
+    this.tenantId = tenantId;
     this.migrate();
   }
 
@@ -50,6 +52,7 @@ export class SqliteStorage implements IVoiceStorage {
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS top_module_id    TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS tenant_id        TEXT;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
         ON voice_posts(commit_sha, platform);
@@ -82,19 +85,21 @@ export class SqliteStorage implements IVoiceStorage {
   saveDraft(input: SaveDraftInput): Promise<string> {
     const id = randomUUID();
     this.db.prepare(`
-      INSERT INTO voice_posts (id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO voice_posts (id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count, status, tenant_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
     `).run(id, input.commit_sha, input.repo, input.platform, input.ai_draft,
-           input.top_finding ?? null, input.top_module_id ?? null, input.findings_count ?? 0);
+           input.top_finding ?? null, input.top_module_id ?? null, input.findings_count ?? 0,
+           this.tenantId);
     return Promise.resolve(id);
   }
 
   getRecentModuleIds(days: number): Promise<string[]> {
     const rows = this.db.prepare(`
       SELECT top_module_id FROM voice_posts
-      WHERE created_at >= datetime('now', '-' || ? || ' days')
+      WHERE tenant_id = ?
+        AND created_at >= datetime('now', '-' || ? || ' days')
         AND top_module_id IS NOT NULL
-    `).all(days) as { top_module_id: string }[];
+    `).all(this.tenantId, days) as { top_module_id: string }[];
     return Promise.resolve(rows.map((r) => r.top_module_id));
   }
 
@@ -126,10 +131,10 @@ export class SqliteStorage implements IVoiceStorage {
   getTopVoiceExamples(platform: Platform, limit: number): Promise<VoicePost[]> {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
-      WHERE platform = ? AND status = 'published' AND edit_ratio IS NOT NULL
+      WHERE tenant_id = ? AND platform = ? AND status = 'published' AND edit_ratio IS NOT NULL
       ORDER BY engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST
       LIMIT ?
-    `).all(platform, limit) as VoicePost[];
+    `).all(this.tenantId, platform, limit) as VoicePost[];
     return Promise.resolve(rows);
   }
 
@@ -145,44 +150,44 @@ export class SqliteStorage implements IVoiceStorage {
   getPostsPendingEngagement(platform: Platform): Promise<VoicePost[]> {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
-      WHERE platform = ? AND status = 'published'
+      WHERE tenant_id = ? AND platform = ? AND status = 'published'
         AND linkedin_urn IS NOT NULL AND engagement_score IS NULL
-    `).all(platform) as VoicePost[];
+    `).all(this.tenantId, platform) as VoicePost[];
     return Promise.resolve(rows);
   }
 
   getRecentPublished(limit: number): Promise<VoicePost[]> {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
-      WHERE status = 'published'
+      WHERE tenant_id = ? AND status = 'published'
       ORDER BY published_at DESC NULLS LAST
       LIMIT ?
-    `).all(limit) as VoicePost[];
+    `).all(this.tenantId, limit) as VoicePost[];
     return Promise.resolve(rows);
   }
 
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {
     const row = this.db.prepare(`
-      SELECT id FROM voice_posts WHERE commit_sha = ? AND platform = ?
-    `).get(commit_sha, platform);
+      SELECT id FROM voice_posts WHERE tenant_id = ? AND commit_sha = ? AND platform = ?
+    `).get(this.tenantId, commit_sha, platform);
     return Promise.resolve(row !== undefined);
   }
 
   getQueuedPosts(platform: Platform): Promise<VoicePost[]> {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
-      WHERE platform = ? AND status = 'queued'
+      WHERE tenant_id = ? AND platform = ? AND status = 'queued'
       ORDER BY created_at ASC
-    `).all(platform) as VoicePost[];
+    `).all(this.tenantId, platform) as VoicePost[];
     return Promise.resolve(rows);
   }
 
   getScheduledUnpublished(platform: Platform): Promise<VoicePost[]> {
     const rows = this.db.prepare(`
       SELECT * FROM voice_posts
-      WHERE platform = ? AND status = 'scheduled' AND published IS NULL
+      WHERE tenant_id = ? AND platform = ? AND status = 'scheduled' AND published IS NULL
       ORDER BY created_at ASC
-    `).all(platform) as VoicePost[];
+    `).all(this.tenantId, platform) as VoicePost[];
     return Promise.resolve(rows);
   }
 

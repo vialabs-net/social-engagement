@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS voice_posts (
   findings_count  INTEGER NOT NULL DEFAULT 0,
   linkedin_urn    TEXT,                    -- urn:li:share:... captured from Buffer externalLink
   reactions_count INTEGER NOT NULL DEFAULT 0, -- LinkedIn reactions fetched from socialActions API
-  engagement_score REAL                   -- composite: edit_ratio*0.6 + normalized_reactions*0.4
+  engagement_score REAL,                  -- composite: edit_ratio*0.6 + normalized_reactions*0.4
+  tenant_id       UUID REFERENCES tenants(id) -- multi-tenant: scopes voice data per user
 );
 
 -- Uninteresting commits saved for optional weekly roundup
@@ -122,6 +123,9 @@ ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_access_token     TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_member_id        TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS linkedin_token_expires_at TIMESTAMPTZ;
+
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
+CREATE INDEX IF NOT EXISTS idx_voice_posts_tenant ON voice_posts(tenant_id);
 
 DROP INDEX IF EXISTS idx_voice_retrieval;
 CREATE INDEX IF NOT EXISTS idx_voice_retrieval

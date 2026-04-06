@@ -120,6 +120,8 @@ async function markFailed(jobId: string, errorMessage: string): Promise<void> {
  */
 async function processAllPending(): Promise<void> {
   let processed = 0;
+  let failed = 0;
+  const tenantsSeen = new Set<string>();
 
   while (true) {
     const jobId = await claimJob();
@@ -132,10 +134,14 @@ async function processAllPending(): Promise<void> {
     } catch (err) {
       logger.error('worker.job.error', { jobId, error: String(err) });
       await markFailed(jobId, String(err));
+      failed++;
     }
   }
 
-  logger.info('worker.run.complete', { processed });
+  logger.info('worker.run.summary', { processed, failed, skipped: 0 });
+  if (failed > 0) {
+    logger.error('worker.run.failures', { failed, processed });
+  }
 }
 
 async function main(): Promise<void> {

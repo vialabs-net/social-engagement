@@ -127,7 +127,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     config.ai.model,
     config.ai.max_tokens,
   );
-  const storage = new SupabaseStorage(deps.supabaseUrl, deps.supabaseServiceKey);
+  const storage = new SupabaseStorage(deps.supabaseUrl, deps.supabaseServiceKey, tenant.id);
 
   const [owner, repo] = job.repo.split('/') as [string, string];
 
@@ -197,6 +197,12 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         try {
           const linkedinClient = new LinkedInClient(tenant.linkedin_access_token);
           await linkedinClient.post(tenant.linkedin_member_id, linkedinPost);
+          await storage.updatePublished({
+            id: draftId,
+            published: linkedinPost,
+            edit_ratio: 1.0,
+            published_at: new Date().toISOString(),
+          });
           logger.info('worker.commit.linkedin_posted', { sha: commit.sha });
         } catch (err) {
           if (err instanceof LinkedInAuthExpiredError) {
