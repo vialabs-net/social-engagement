@@ -1,8 +1,8 @@
 name: Scan Sent Posts
 
 on:
-  schedule:
-    - cron: '0 */2 * * *'    # every 2 hours
+  # schedule disabled — replaced by multi-tenant scanner (devcast-scanner Cloud Run Job)
+  # - cron: '0 */2 * * *'
   workflow_dispatch:
 
 permissions:

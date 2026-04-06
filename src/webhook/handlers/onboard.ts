@@ -7,6 +7,7 @@ interface TenantRow {
   readonly buffer_access_token: string | null;
   readonly linkedin_member_id: string | null;
   readonly config: Record<string, unknown>;
+  readonly voice_bootstrap: string | null;
 }
 
 function maskToken(token: string | null): string {
@@ -22,6 +23,7 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
   const name = (author['name'] as string | undefined) ?? tenant.github_username;
   const website = (author['website'] as string | undefined) ?? '';
   const bufferOrgId = (buffer['organization_id'] as string | undefined) ?? '';
+  const voiceBootstrap = tenant.voice_bootstrap ?? '';
 
   const linkedinConnected = !!tenant.linkedin_member_id;
   const linkedinSection = linkedinConnected
@@ -63,6 +65,9 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
     input::placeholder{color:#3f3f46}
     .hint{font-size:.75rem;color:#52525b;margin-top:-12px;margin-bottom:16px}
     .hint-card{font-size:.75rem;color:#52525b;margin-top:10px}
+    textarea{width:100%;padding:8px 12px;background:#09090b;border:1px solid #27272a;border-radius:8px;font-size:.875rem;color:#f4f4f5;font-family:inherit;margin-bottom:16px;outline:none;transition:border-color .15s;resize:vertical}
+    textarea:focus{border-color:#52525b}
+    textarea::placeholder{color:#3f3f46}
     .btn-primary{background:#fff;color:#09090b;border:none;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s}
     .btn-primary:hover{background:#e4e4e7}
     .btn-linkedin{display:inline-flex;align-items:center;gap:8px;background:#0077B5;color:#fff;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;text-decoration:none;transition:background .15s}
@@ -74,7 +79,7 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
 </head>
 <body>
   <nav>
-    <span class="logo">devcast</span>
+    <img src="/favicon.png" alt="devcast" style="height:24px">
     <span class="account-badge"><span class="dot"></span>${tenant.github_username}</span>
   </nav>
   <main>
@@ -89,6 +94,12 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
         <input type="text" name="name" value="${name}" placeholder="Your Name" required>
         <label>Website <span class="optional">optional</span></label>
         <input type="url" name="website" value="${website}" placeholder="https://yoursite.com">
+      </div>
+      <div class="card">
+        <div class="section-title">Your voice <span class="optional">recommended</span></div>
+        <label>Paste 2-3 posts you've written before</label>
+        <textarea name="voice_bootstrap" rows="6" placeholder="Paste any LinkedIn post, blog excerpt, or text that sounds like you. This teaches devcast your writing voice.">${voiceBootstrap}</textarea>
+        <p class="hint">devcast learns your tone, style, and personality from these examples. Better examples = posts that sound more like you.</p>
       </div>
       <div class="card">
         <div class="section-title">Buffer <span class="optional">optional</span></div>
@@ -119,7 +130,7 @@ export async function handleOnboardGet(
 ): Promise<{ status: number; body: string; contentType: string }> {
   const { data, error } = await db
     .from('tenants')
-    .select('id, github_username, buffer_access_token, linkedin_member_id, config')
+    .select('id, github_username, buffer_access_token, linkedin_member_id, config, voice_bootstrap')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -149,6 +160,7 @@ export async function handleOnboardPost(
   const website = params.get('website')?.trim() ?? '';
   const bufferToken = params.get('buffer_access_token')?.trim() ?? '';
   const bufferOrgId = params.get('buffer_org_id')?.trim() ?? '';
+  const voiceBootstrap = params.get('voice_bootstrap')?.trim() ?? '';
 
   if (isNaN(installationId) || !name) {
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=missing_fields` };
@@ -185,6 +197,11 @@ export async function handleOnboardPost(
   // Only update buffer_access_token if a new one was provided (not the masked placeholder)
   if (bufferToken && !bufferToken.includes('••')) {
     updates['buffer_access_token'] = bufferToken;
+  }
+
+  // Save voice bootstrap if provided
+  if (voiceBootstrap) {
+    updates['voice_bootstrap'] = voiceBootstrap;
   }
 
   const { error: updateError } = await db

@@ -130,5 +130,5 @@ export async function handleLinkedInCallback(
   }
 
   logger.info('linkedin.callback.connected', { installationId, memberUrn });
-  return { status: 302, location: `/onboard?installation_id=${installationId}&saved=1` };
+  return { status: 302, location: `/onboard?installation_id=${installationId}&saved=1&linkedin=connected` };
 }
