@@ -25,10 +25,14 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build image
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+
+      - name: Build and push image
         run: |
           IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
-          gcloud builds submit --tag "$IMAGE" --project lilicurl
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
 
       - name: Deploy webhook service
         run: |
