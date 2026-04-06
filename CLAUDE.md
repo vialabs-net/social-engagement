@@ -6,12 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Does
 
-**devcast** monitors all GitHub repositories for new commits, runs the code through specialized
-analysis modules, translates the findings into social media posts using Claude AI, and sends
-them to Buffer as drafts. Liliana reviews and publishes from Buffer's native UI.
+**devcast** is a GitHub Marketplace App that monitors all repositories for new commits,
+runs the code through 24 specialized analysis modules, translates findings into social media
+posts using Claude AI, and publishes them to LinkedIn (direct) and Buffer (Ideas for Instagram).
 
-**Author**: Liliana | **Site**: https://lilicurl.com
-**Platforms**: LinkedIn + Instagram (Buffer free tier, 3 channels)
+**Owner**: Vialabs Spa (vialabs-net) | **Site**: https://devcast.lilicurl.com
+**App URL**: https://app.devcast.lilicurl.com
+**Platforms**: LinkedIn (direct posting via OAuth) + Buffer (Ideas inbox for Instagram)
 
 ---
 
@@ -21,137 +22,109 @@ them to Buffer as drafts. Liliana reviews and publishes from Buffer's native UI.
 npm install                          # install dependencies
 npm run typecheck                    # tsc --noEmit (strict mode, no any)
 npm test                             # vitest run (no test files yet)
-npm run poll                         # run poll-and-generate pipeline locally
-npm run scan                         # run sent-post scanner locally
+npm run poll                         # run poll-and-generate pipeline locally (needs TENANT_ID)
+npm run scan                         # run sent-post scanner locally (needs TENANT_ID)
 npm run setup-buffer                 # verify Buffer token + print org/profile ID instructions
-npm run bootstrap                    # seed voice history from voice-bootstrap.md
+npm run bootstrap                    # seed voice history from voice-bootstrap.md (needs TENANT_ID)
 npm run test-analyze                 # run analysis pipeline on a commit SHA (no publish)
 ```
 
 All scripts use `tsx --env-file=.env.local` — local env vars live in `.env.local`.
 This is an ESM project (`"type": "module"` in package.json). All internal imports use `.js` extensions per NodeNext resolution.
 
----
-
-## Core Requirements (Non-Negotiable)
-
-1. **Install once, works everywhere**: Set up in ONE central repo. Every commit to EVERY repo
-   under the account is automatically detected. New repos require zero configuration.
-
-2. **Specialized modular analysis**: Multiple focused modules analyze code before Claude is called.
-   Claude translates findings — it does NOT analyze code. Modules do.
-
-3. **Buffer is the review interface**: Posts go to Buffer as Ideas (via GraphQL API).
-   Liliana edits in Buffer's native UI and publishes when ready. No GitHub Issues /approve flow.
-
-4. **Voice training loop**: After Liliana publishes from Buffer, the sent-post scanner captures
-   the final published text, computes edit_ratio, and stores it as a voice history example.
-
-5. **Posting window**: Configured for 8:00 AM – 7:00 PM Chile time (America/Santiago).
-   `slot-manager.ts` is implemented but not yet wired into the pipeline — see Known Gaps.
-
-6. **Free tiers only**: GitHub Actions (public repo = unlimited), Buffer (free), Supabase (free).
-   Only Anthropic Claude API costs money — minimize aggressively.
-
-7. **Human review required**: No auto-publish path exists. Buffer Ideas require manual review.
+**TENANT_ID**: Required for all storage operations. For local dev with SQLite, defaults to `'local'`. For Supabase, must be a real tenant UUID from the `tenants` table.
 
 ---
 
-## The Two-Cron Architecture
+## Architecture: Multi-Tenant GitHub App
+
+devcast is a GitHub App installed per user/org. Each installation creates a tenant.
+
+### Three Cloud Run services (same Docker image, different entry points)
 
 ```
-[CRON every 4h — poll-and-generate.yml]
-GitHub Events API → Commit Enrichment → Module Pipeline → Claude → Buffer (Idea)
+getdevcast-webhook (Service — always on, scales to zero)
+  → Receives GitHub webhooks (push, installation events)
+  → Serves onboarding UI at /onboard
+  → Handles OAuth callbacks (GitHub, LinkedIn)
+  → Enqueues jobs in job_queue table
 
-[CRON every 2h — scan-sent-posts.yml]
-Buffer "sent" API → Match by text similarity → computeEditRatio → Voice History
+devcast-worker (Job — every 15 min via Cloud Scheduler)
+  → Claims pending jobs from job_queue
+  → Per job: fetch tenant → get installation token → process commits
+  → Pipeline: enrich → filter → analyze → generate → post to LinkedIn/Buffer
+
+devcast-scanner (Job — every 2h via Cloud Scheduler)
+  → Iterates all active tenants with Buffer tokens
+  → Scans each tenant's published Buffer posts
+  → Computes edit_ratio → updates voice training loop
 ```
 
-These two crons are kept separate for independent debuggability.
+### CI/CD
+
+Push to `trunk` → GitHub Actions → Docker build → deploys all three (webhook + worker + scanner).
+Uses Workload Identity Federation (no long-lived GCP keys in GitHub).
+
+### Onboarding flow
+
+```
+User installs GitHub App on GitHub
+  → GitHub OAuth callback → /auth/github/callback → redirect to /onboard
+  → Form: name, website, voice bootstrap, Buffer API key, LinkedIn connect
+  → Save → tenant configured
+  → Pushes trigger webhook → worker processes → posts appear
+```
 
 ---
 
-## Full Pipeline Flow
+## Full Pipeline Flow (per commit)
 
 ```
-[CRON every 4h — poll-and-generate.yml]
-│
-├── github/events-poller.ts
-│   └── GET /users/{username}/events (ETag-cached, 304 = free)
-│       Filter: PushEvent after last_event_id
-│
-├── github/commit-enricher.ts
-│   └── GET /repos/{owner}/{repo}/commits/{sha}
-│       Extract: files, stats, raw patches (max 150 lines per file)
-│       → FileDiff[] via analysis/diff-parser.ts
-│
-├── utils/commit-filter.ts (ZERO API COST — rule-based)
-│   └── isInteresting(): lines >= 10, not merge/bot/wip/excluded
-│       NOT interesting → skipped (pending_batch write not yet implemented)
-│       IS interesting → analysis pipeline
-│
-├── analysis/pipeline.ts (ALL 19 modules run IN PARALLEL)
-│   ├── ComplexityModule.analyze(ctx)
-│   ├── DesignPatternsModule.analyze(ctx)
-│   ├── CleanCodeModule.analyze(ctx)
-│   ├── TypeSystemModule.analyze(ctx)        ← TypeScript only
-│   ├── IntegrationModule.analyze(ctx)
-│   ├── TestingModule.analyze(ctx)
-│   ├── AiAssistedModule.analyze(ctx)
-│   ├── PerformanceModule.analyze(ctx)       ← N+1, batch, streams, sync I/O
-│   ├── SecurityModule.analyze(ctx)          ← secrets, SQL injection, auth
-│   ├── ApiDesignModule.analyze(ctx)         ← REST, versioning, rate limiting
-│   ├── ErrorResilienceModule.analyze(ctx)   ← circuit breaker, retry, shutdown
-│   ├── ObservabilityModule.analyze(ctx)     ← tracing, metrics, error tracking
-│   ├── ConcurrencyModule.analyze(ctx)       ← mutex, workers, atomics
-│   ├── DxModule.analyze(ctx)                ← custom errors, config validation
-│   ├── DependencyHealthModule.analyze(ctx)  ← major bumps, security deps
-│   ├── EvolutionaryModule.analyze(ctx)      ← extraction, migration, deprecation
-│   ├── JsAdvancedModule.analyze(ctx)        ← Proxy, WeakRef, generators
-│   ├── ReactPatternsModule.analyze(ctx)     ← hooks, context, memo, Suspense (.tsx/.jsx)
-│   └── DevopsModule.analyze(ctx)            ← Docker, CI, Helm, health checks
-│   → Promise.allSettled (one failure = null, not crash)
-│   → Sort by interestScore DESC → top 3 findings
-│   → If 0 findings → SKIP (no Claude call, no Buffer post)
-│
-├── ai/prompt-builder.ts
-│   ├── voice/retriever.ts → top 5 published posts (edit_ratio DESC)
-│   └── Assemble: [voice examples TOP] + [commit] + [findings] + [task BOTTOM]
-│
-├── ai/post-generator.ts
-│   └── claude-sonnet-4-6, max_tokens=1600
-│       ONE call per commit (never per-module)
-│       Response parsed via XML tags: <linkedin_draft> and <instagram_draft>
-│       Store ai_draft immediately in DB
-│
-├── buffer/publisher.ts
-│   └── GraphQL mutation: createIdea (Buffer Ideas API)
-│       Creates an Idea per platform → appears in Buffer Ideas inbox
-│       Store: buffer_post_id (Idea ID), status='scheduled'
-│
-└── review/notifier.ts
-    └── Open GitHub Issue (NOTIFICATION ONLY — no /approve needed)
-        Links to Buffer draft and commit
-        Auto-closes after 48h
+GitHub push webhook → job_queue(tenant_id, repo, before_sha, after_sha)
+  → devcast-worker claims job
+  → fetch tenant from DB (credentials, config)
+  → get GitHub App installation token (JWT → POST /app/installations/{id}/access_tokens)
+  → compareCommits(before...after) → list of commits
 
-[CRON every 2h — scan-sent-posts.yml]
-│
-└── buffer/sent-scanner.ts
-    ├── GET /1/profiles/{id}/updates/sent.json (per platform)
-    ├── Match by text similarity (computeEditRatio >= 0.3 threshold)
-    │   (Idea IDs differ from published post IDs — can't match by ID)
-    └── For each newly sent post:
-        ├── Fetch final text from Buffer response
-        ├── computeEditRatio(ai_draft, published_text) → 0.0–1.0
-        └── UPDATE: published, edit_ratio, status='published'
-            → This post is now a voice history example ✓
+Per commit:
+  → hasDraft(sha, tenant_id)? → skip if duplicate
+  → enrichCommit(sha) → FileDiff[], stats, languages
+  → isInteresting()? → skip if trivial (< 10 lines, merge, bot, wip)
+  → runPipeline(24 modules, parallel via Promise.allSettled)
+    → freshness multiplier: adjustedScore = interestScore / (fires_in_30d + 1)
+    → top 3 findings by adjustedScore
+    → 0 findings → skip (no Claude call)
+  → generatePosts(Sonnet, max_tokens=1600, ONE call per commit)
+    → voice examples from tenant's own published posts (tenant-scoped)
+    → module variety hint injected before task
+    → parse XML tags: <post_draft> + <short_draft>
+    → save draft to voice_posts with tenant_id
+  → LinkedIn: post directly if tenant has linkedin_access_token
+    → mark voice_post as published (edit_ratio=1.0, immediate)
+  → Buffer: create Idea if tenant has buffer_access_token
+  → GitHub Issue: notification with links to draft and commit
 ```
+
+---
+
+## Multi-Tenant Data Isolation
+
+All voice data is scoped per tenant via `tenant_id` in `voice_posts`.
+
+```typescript
+// Storage is tenant-scoped via constructor
+const storage = new SupabaseStorage(url, key, tenant.id);
+// All queries automatically filter by tenant_id
+```
+
+- Voice examples: only from the tenant's own published posts
+- Duplicate detection: scoped per tenant (two tenants can process same SHA)
+- Module freshness: per-tenant history
+- Voice training loop: per-tenant Buffer scanning
 
 ---
 
 ## THE MODULE SYSTEM — The Architectural Core
-
-See [content-generator-v2.md](content-generator-v2.md) for the full design.
 
 **The key principle**: Modules detect what is interesting. Claude writes about it.
 Claude never analyzes code directly.
@@ -170,206 +143,80 @@ interface CodeAnalyzer {
 **MODULE_REGISTRY** (`src/analysis/modules/index.ts`):
 - This is the ONLY file that changes when adding a new module
 - Import the module class + add one line to the array
-- No other code changes anywhere
 
-**Modules** (17): complexity, design_patterns, clean_code, type_system, integration, testing, ai_assisted, performance, security, api_design, error_resilience, observability, concurrency, dx, dependency_health, evolutionary, js_advanced
+**24 modules**: complexity, design_patterns, clean_code, type_system, integration, testing,
+ai_assisted, performance, security, api_design, error_resilience, observability, concurrency,
+dx, dependency_health, evolutionary, js_advanced, react_patterns, devops, python, go,
+java_quarkus, elixir, architecture_patterns
 
 **Pipeline behavior**:
 - All modules run in `Promise.allSettled` (parallel, failure-isolated)
-- Returns `Finding[]` sorted by `interestScore DESC`, sliced to top 3
+- Freshness multiplier reduces repeated modules: `adjustedScore = interestScore / (fires_in_30d + 1)`
+- Returns `Finding[]` sorted by adjustedScore DESC, sliced to top 3
 - Returns empty array if nothing found → caller skips Claude call entirely
-
-**Adding a new module**: Create `src/analysis/modules/your-module.ts` implementing `CodeAnalyzer`,
-add to `MODULE_REGISTRY`. See [content-generator-v2.md](content-generator-v2.md) for the
-complete walkthrough.
 
 ---
 
 ## Claude API — Cost Minimization (Critical)
 
-**Model**: `claude-sonnet-4-6` ONLY. Never Opus.
+**Model**: `claude-sonnet-4-6` ONLY for post generation. Never Opus.
 **max_tokens**: 1600 (hardcoded in `src/ai/client.ts`, never increase)
-
-**Token budget per call:**
-- Input: ~1,950 tokens (system + voice examples + commit + findings + task)
-- Output: ~900 tokens (LinkedIn ~600 + Instagram ~300)
-- Cost: ~$0.006 per post
 
 **Cost controls:**
 - `isInteresting()` runs BEFORE any API call — zero API cost on trivial commits
 - Modules run BEFORE Claude — if 0 findings, Claude is never called
 - ONE Claude call per commit — never one per module
 - All drafts cached in DB — rejection is free (no re-generation)
-- Duplicate SHA detection — processed commits never re-processed
-
-**Rate limit policy:**
-- `529 Overloaded` → retry with backoff (1s → 2s → 4s, max 3 attempts)
-- `400 Bad Request` → throw `PromptError`, do NOT retry
-- `401 Unauthorized` → throw immediately
+- Duplicate SHA detection per tenant — processed commits never re-processed
 
 ---
 
-## Prompt Assembly (Non-Negotiable Order)
+## Database Schema (Multi-Tenant)
 
-Following Anthropic's long-context best practices:
+```sql
+-- Core tables
+voice_posts     — drafts, published text, edit_ratio, status, tenant_id
+tenants         — one row per GitHub App installation
+job_queue       — async job queue (webhook enqueues, worker picks up)
 
+-- Supporting tables
+pending_batch   — non-interesting commits for future weekly roundup (unused)
+events_state    — ETag + last_event_id per username (local dev only)
+scheduled_slots — atomic slot claiming with UNIQUE constraint
+
+-- Indexes
+idx_voice_posts_tenant          — fast tenant-scoped queries
+idx_voice_posts_sha_platform    — duplicate detection
+idx_voice_retrieval             — voice example retrieval (engagement_score, edit_ratio)
+idx_job_queue_pending           — fast job claiming
 ```
-[SYSTEM — ~300 tokens]
-[VOICE EXAMPLES — TOP of context, ordered edit_ratio DESC]
-[COMMIT CONTEXT — middle]
-[MODULE FINDINGS — below commit, above task]
-[TASK INSTRUCTION — BOTTOM]
-```
-
-The findings are serialized as readable natural language (not JSON) so Claude can cite them
-naturally in the post. Each finding includes: headline, technical context, teaching angle,
-optional before/after evidence.
 
 ---
 
-## Chile Timezone Scheduling
-
-**Timezone**: `America/Santiago` (IANA — handles CLT/CLST DST automatically)
-**Library**: `date-fns-tz` — never hardcode UTC offsets
-**Window**: 8:00 AM – 7:00 PM CLT (19:00 hard cutoff)
-**Daily slots**: [8, 12, 17] hours CLT → 8am, 12pm, 5pm
-
-`slot-manager.ts` is fully implemented with atomic slot claiming via
-`UNIQUE(platform, scheduled_at)` in the `scheduled_slots` table. However, it is **not yet
-wired into the pipeline** — `publisher.ts` creates Buffer Ideas directly without scheduling.
-Slot-based scheduling will be needed if the pipeline moves from Ideas to scheduled posts.
-
----
-
-## Three External Services
+## External Services
 
 ### GitHub API
-**Auth**: `GITHUB_TOKEN` (auto-provided in Actions)
+**Auth**: GitHub App installation tokens (JWT → exchange for short-lived token per tenant)
 **Key endpoints**:
-- `GET /users/{u}/events?per_page=100` — event polling with ETag
-- `GET /repos/{o}/{r}/commits/{sha}` — commit enrichment (1 req per interesting commit)
+- `POST /app/installations/{id}/access_tokens` — installation token
+- `GET /repos/{o}/{r}/compare/{base}...{head}` — commits in push range
+- `GET /repos/{o}/{r}/commits/{sha}` — commit enrichment
 - `POST /repos/{o}/{r}/issues` — notification issue
 
-**Error handling**: 404 → `RepoNotFoundError` (don't retry); 429 → `withRetry()`
+### LinkedIn API
+**Auth**: OAuth 2.0 per tenant (`w_member_social` scope, 2-month token TTL)
+**Endpoint**: `POST https://api.linkedin.com/rest/posts` (LinkedIn-Version: 202501)
+**Posts marked published immediately** (edit_ratio=1.0, no editing step)
 
 ### Buffer API
-**Auth**: `BUFFER_ACCESS_TOKEN` — long-lived OAuth token
-**Free tier**: 3 channels, 10 posts queued per channel
-**Actual endpoints used**:
-- GraphQL (`https://graph.buffer.com/`) — `createIdea` mutation to create Ideas
+**Auth**: Per-tenant API key (pasted in onboarding, not OAuth)
+**Endpoints**:
+- GraphQL (`https://graph.buffer.com/`) — `createIdea` mutation
 - `GET /1/profiles/{id}/updates/sent.json` — scan for published posts (voice loop)
-
-**How it works**: `publisher.ts` creates Buffer Ideas via GraphQL (not scheduled posts via REST).
-Ideas land in Buffer's Ideas inbox for manual review and publishing. The `setup-buffer.ts`
-script verifies token validity and prints instructions for finding `organization_id` and profile IDs.
-
-**Token expiry**: `401` → throw `BufferTokenExpiredError`. Regenerate at buffer.com → Settings → Apps.
 
 ### Anthropic Claude API
 **Auth**: `ANTHROPIC_API_KEY`
-**Model**: `claude-sonnet-4-6`
-**max_tokens**: 1600 (hardcoded)
-
----
-
-## Database Schema
-
-```sql
--- database/schema.sql — run in Supabase SQL Editor
-
-CREATE TABLE voice_posts (
-  id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  commit_sha      TEXT NOT NULL,
-  repo            TEXT NOT NULL,           -- 'owner/repo'
-  platform        TEXT NOT NULL,           -- 'linkedin' | 'instagram'
-  ai_draft        TEXT NOT NULL,           -- stored immediately on generation
-  published       TEXT,                    -- captured from Buffer "sent" API
-  edit_ratio      REAL,                    -- 1.0=unchanged, 0.0=complete rewrite
-  published_at    TIMESTAMPTZ,
-  buffer_post_id  TEXT,
-  scheduled_at    TIMESTAMPTZ,             -- UTC time Buffer will publish
-  status          TEXT DEFAULT 'pending',  -- 'pending'|'scheduled'|'published'|'queued'
-  top_finding     TEXT,                    -- headline of the top module finding
-  findings_count  INTEGER DEFAULT 0        -- how many findings the pipeline produced
-);
-
-CREATE TABLE pending_batch (
-  id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  commit_sha      TEXT NOT NULL,
-  repo            TEXT NOT NULL,
-  enriched_data   JSONB NOT NULL
-);
-
-CREATE TABLE events_state (
-  username        TEXT PRIMARY KEY,
-  last_event_id   TEXT NOT NULL,
-  last_event_etag TEXT,
-  updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE scheduled_slots (
-  id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  platform        TEXT NOT NULL,
-  scheduled_at    TIMESTAMPTZ NOT NULL,
-  voice_post_id   TEXT REFERENCES voice_posts(id),
-  UNIQUE(platform, scheduled_at)           -- prevents double-booking
-);
-
-CREATE INDEX idx_voice_retrieval
-  ON voice_posts(platform, edit_ratio DESC)
-  WHERE status = 'published';
-```
-
----
-
-## Configuration
-
-```yaml
-# config.yaml (gitignored)
-# config.example.yaml (committed — template for forkers)
-
-author:
-  github_username: "yourusername"
-  name: "Your Name"
-  website: "https://lilicurl.com"         # appears in LinkedIn CTAs
-
-github:
-  exclude_repos: []
-  exclude_patterns:
-    - "^(wip|temp|fixup!|squash!)"
-    - "\\[skip\\]"
-  max_commits_per_push: 1
-
-buffer:
-  organization_id: ""                    # REQUIRED — get from setup-buffer script
-
-platforms:
-  linkedin:
-    enabled: true
-    buffer_profile_id: ""
-  instagram:
-    enabled: true
-    buffer_profile_id: ""
-
-scheduling:
-  timezone: "America/Santiago"
-  window_start_hour: 8
-  window_end_hour: 19
-  daily_slots: [8, 12, 17]
-
-posting:
-  poll_interval_hours: 4
-  interesting_min_lines: 10
-  voice_examples_count: 5
-  max_pending_drafts: 10
-  analysis_top_n: 3                       # top N findings passed to Claude
-
-ai:
-  model: "claude-sonnet-4-6"
-  max_tokens: 1600
-```
+**Model**: `claude-sonnet-4-6`, max_tokens=1600
 
 ---
 
@@ -378,187 +225,101 @@ ai:
 ```
 devcast/
 ├── .github/workflows/
-│   ├── poll-and-generate.yml       # every 4h: commits → modules → Claude → Buffer
-│   ├── scan-sent-posts.yml          # every 2h: Buffer sent → voice history
-│   └── bootstrap-voice.yml          # manual: seed voice history
+│   ├── deploy.yml                  # CI/CD: push to trunk → deploy webhook + worker + scanner
+│   ├── poll-and-generate.yml       # DISABLED — replaced by webhook + worker
+│   ├── scan-sent-posts.yml         # DISABLED — replaced by multi-tenant scanner
+│   ├── bootstrap-voice.yml         # manual: seed voice history
+│   └── voice-report.yml            # weekly voice training report
 ├── src/
-│   ├── analysis/                    # ← THE ARCHITECTURAL SHOWCASE
-│   │   ├── types.ts                 # CodeAnalyzer, Finding, AnalysisContext interfaces
-│   │   ├── pipeline.ts              # parallel execution, ranking, top-N
-│   │   ├── diff-parser.ts           # raw Git patch → FileDiff[]
-│   │   ├── language-detector.ts     # file extensions → language list
+│   ├── analysis/                   # 24 analysis modules
+│   │   ├── types.ts                # CodeAnalyzer, Finding, AnalysisContext
+│   │   ├── pipeline.ts             # parallel execution, freshness multiplier, top-N
+│   │   ├── diff-parser.ts          # raw Git patch → FileDiff[]
 │   │   └── modules/
-│   │       ├── index.ts             # MODULE_REGISTRY (19 modules) ← only file to edit
-│   │       ├── complexity.ts
-│   │       ├── design-patterns.ts
-│   │       ├── clean-code.ts
-│   │       ├── type-system.ts       # TypeScript only
-│   │       ├── integration.ts
-│   │       ├── testing.ts
-│   │       ├── ai-assisted.ts
-│   │       ├── performance.ts       # N+1, batch, streams, sync I/O
-│   │       ├── security.ts          # secrets, SQL injection, auth, headers
-│   │       ├── api-design.ts        # REST, versioning, rate limiting, pagination
-│   │       ├── error-resilience.ts  # circuit breaker, retry, shutdown, health
-│   │       ├── observability.ts     # tracing, logging, metrics, error tracking
-│   │       ├── concurrency.ts       # mutex, atomics, workers, race guards
-│   │       ├── dx.ts                # custom errors, config validation, CLI
-│   │       ├── dependency-health.ts # major bumps, security deps, removals
-│   │       ├── evolutionary.ts      # extraction, renames, migrations, deprecation
-│   │       ├── js-advanced.ts       # Proxy/Reflect, WeakRef, generators
-│   │       ├── react-patterns.ts   # hooks, context, memo, Suspense, server components
-│   │       └── devops.ts            # Docker, CI, Helm, health checks, secrets
-│   ├── github/
-│   │   ├── client.ts                # Octokit + ETag state
-│   │   ├── events-poller.ts         # poll /users/{u}/events
-│   │   └── commit-enricher.ts       # fetch commit, build FileDiff[]
+│   │       └── index.ts            # MODULE_REGISTRY ← only file to edit
 │   ├── ai/
-│   │   ├── client.ts                # Anthropic SDK (sonnet, max_tokens=1600)
-│   │   ├── prompt-builder.ts        # voice top + commit + findings + task bottom
-│   │   └── post-generator.ts        # ONE call per commit, cache draft, parse XML tags
+│   │   ├── client.ts               # Anthropic SDK (sonnet, max_tokens=1600)
+│   │   ├── prompt-builder.ts       # voice top + commit + findings + module_variety_hint + task bottom
+│   │   └── post-generator.ts       # ONE call/commit, parse XML, save draft with tenant_id
 │   ├── buffer/
-│   │   ├── client.ts                # Buffer GraphQL + REST wrapper
-│   │   ├── publisher.ts             # createIdea GraphQL mutation → Buffer Ideas
-│   │   └── sent-scanner.ts          # poll sent posts → text similarity match → voice history
-│   ├── scheduling/
-│   │   └── slot-manager.ts          # America/Santiago 8am-7pm (implemented, not yet wired)
+│   │   ├── client.ts               # Buffer GraphQL + REST wrapper
+│   │   ├── publisher.ts            # createIdea GraphQL mutation
+│   │   └── sent-scanner.ts         # poll sent posts → voice training loop
+│   ├── linkedin/
+│   │   └── client.ts               # LinkedIn Posts API + OAuth token exchange
+│   ├── webhook/
+│   │   ├── server.ts               # HTTP server: health, onboard, auth, webhooks
+│   │   ├── github-handler.ts       # Signature validation + event routing
+│   │   └── handlers/
+│   │       ├── push.ts             # Enqueue job in job_queue
+│   │       ├── installation.ts     # Create/deactivate tenant on install/uninstall
+│   │       ├── onboard.ts          # Onboarding UI (dark theme, voice bootstrap)
+│   │       ├── github-oauth.ts     # GitHub App OAuth callback
+│   │       └── linkedin-oauth.ts   # LinkedIn OAuth flow with HMAC-signed state
+│   ├── worker/
+│   │   ├── main-worker.ts          # Cloud Run Job entry: claim + process pending jobs
+│   │   ├── process-job.ts          # Per-job pipeline: tenant → commits → posts
+│   │   ├── main-scan-tenants.ts    # Multi-tenant sent-post scanner
+│   │   └── github-app-auth.ts      # JWT → installation token exchange
 │   ├── voice/
-│   │   ├── storage.ts               # IVoiceStorage interface
-│   │   ├── supabase-storage.ts      # production
-│   │   ├── sqlite-storage.ts        # local dev
-│   │   └── similarity.ts            # computeEditRatio(draft, published)
-│   ├── review/
-│   │   └── notifier.ts              # notification-only GitHub Issue (no /approve)
+│   │   ├── storage.ts              # IVoiceStorage interface (tenantId in constructor)
+│   │   ├── supabase-storage.ts     # Production (tenant-scoped queries)
+│   │   ├── sqlite-storage.ts       # Local dev (tenant-scoped)
+│   │   └── similarity.ts           # computeEditRatio(draft, published)
 │   ├── config/
 │   │   ├── loader.ts
-│   │   └── schema.ts               # Zod schemas
+│   │   └── schema.ts              # Zod schemas
 │   └── utils/
-│       ├── logger.ts                # structured JSON to stdout
-│       ├── retry.ts                 # withRetry() per-service policies
-│       └── commit-filter.ts         # isInteresting() — rule-based, zero API cost
+│       ├── logger.ts               # structured JSON to stdout
+│       ├── retry.ts                # withRetry() per-service policies
+│       └── commit-filter.ts        # isInteresting() — rule-based, zero API cost
 ├── scripts/
-│   ├── setup-buffer.ts              # verify Buffer token + print org/profile instructions
-│   ├── bootstrap-voice.ts           # seed DB from voice-bootstrap.md
-│   └── test-analyze.ts              # run module pipeline on any commit SHA
+│   ├── setup-buffer.ts
+│   ├── bootstrap-voice.ts
+│   └── test-analyze.ts
+├── public/
+│   └── favicon.png                 # devcast logo
 ├── database/
 │   └── schema.sql
-├── data/
-│   └── .gitkeep                     # local SQLite (gitignored)
-├── .env.example
-├── config.example.yaml
-├── config.yaml                      # gitignored
-├── voice-bootstrap.md
-├── content-generator-v2.md          # modular analyzer design doc
-├── CONTENT_GUIDE.md
-├── content-strategy.json
-├── CLAUDE.md
-└── README.md
+├── phase1-spec.md                  # Phase 1 spec (GitHub Marketplace)
+├── content-intelligence-spec.md    # Phase 2 spec (Content Intelligence Agent)
+└── CLAUDE.md
 ```
-
----
-
-## MVP Build Order
-
-Build in this sequence — each layer depends on the previous:
-
-1. `src/config/` — loader, Zod schema, config.example.yaml
-2. `database/schema.sql`
-3. `src/voice/storage.ts` + `supabase-storage.ts` + `sqlite-storage.ts` + `similarity.ts`
-4. `src/scheduling/slot-manager.ts` (date-fns-tz)
-5. `src/utils/` — logger, retry, commit-filter
-6. `src/analysis/types.ts` + `diff-parser.ts` + `language-detector.ts`
-7. `src/analysis/modules/` — all 19 modules + index.ts
-8. `src/analysis/pipeline.ts`
-9. `src/github/client.ts` + `events-poller.ts` + `commit-enricher.ts`
-10. `src/ai/client.ts` + `prompt-builder.ts` + `post-generator.ts`
-11. `src/buffer/client.ts` + `publisher.ts` + `sent-scanner.ts`
-12. `src/review/notifier.ts`
-13. `.github/workflows/` — all 3 workflows
-14. `scripts/setup-buffer.ts` + `bootstrap-voice.ts`
-15. `.env.example` (exists) + `voice-bootstrap.md`
-
----
-
-## Setup Experience — 8 Steps
-
-1. **Fork** → Settings → Actions → "Allow all actions and reusable workflows"
-2. **Supabase**: supabase.com → New project → SQL Editor → run `database/schema.sql`
-3. **Secrets**: Settings → Secrets → Actions → add: `ANTHROPIC_API_KEY`, `BUFFER_ACCESS_TOKEN`,
-   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CONFIG_YAML` (entire config.yaml content)
-4. **Config**: `cp config.example.yaml config.yaml` → set `author.github_username`
-5. **Buffer profiles**: `npm install && npm run setup-buffer` → paste profile IDs
-6. **Voice bootstrap**: Edit `voice-bootstrap.md` with 3–5 posts in your actual voice
-7. **Seed**: `npm run bootstrap`
-8. **Test**: Actions → "Poll and Generate" → "Run workflow" → check Buffer for draft
 
 ---
 
 ## Error Handling Per Service
 
 ```
-GitHub:   404 → RepoNotFoundError (don't retry); 429 → withRetry()
-Anthropic: 529 → withRetry(); 400 → PromptError (don't retry); 401 → throw immediately
-Buffer:   5xx → withRetry(); 401 → BufferTokenExpiredError; 429 → store as 'queued'
+GitHub:     404 → RepoNotFoundError (no retry); 429 → withRetry()
+Anthropic:  529 → withRetry(); 400/403/404/422 → throw (no retry); 401 → throw
+Buffer:     5xx → withRetry(); 401 → BufferTokenExpiredError; 429 → store 'queued'
+LinkedIn:   401 → LinkedInAuthExpiredError (log, skip, no crash); 5xx → withRetry()
 ```
 
 ---
 
-## Known Gaps (Not Yet Implemented)
+## Infrastructure (GCP)
 
-1. **`events_state` in Supabase**: `SupabaseStorage` does not implement `getEventsState`/`setEventsState`.
-   In production, `last_event_id` is always `null` — the poll processes events as if starting fresh each run.
-   Only `SqliteStorage` persists event state between runs.
-
-2. **`pending_batch` writes**: `isInteresting()` returning false just skips the commit.
-   Nothing writes to the `pending_batch` table — weekly roundup feature is unimplemented.
-
-3. **`slot-manager.ts` unused**: Fully implemented but never called from `publisher.ts` or `main-poll.ts`.
-   Will be needed if moving from Buffer Ideas to scheduled posts.
-
-4. **`manage-voice.ts` script**: Referenced in earlier designs but never created.
-
-5. **`diff` package unused**: Listed in `package.json` dependencies but never imported in source code.
-
----
-
-## Storage Backend Selection
-
-Storage is selected by the **presence of `SUPABASE_URL`** env var — not by `USE_SQLITE`:
-```typescript
-const storage: IVoiceStorage = process.env['SUPABASE_URL']
-  ? new SupabaseStorage(...)
-  : new SqliteStorage(process.env['SQLITE_PATH'] ?? 'data/devcast.db');
-```
-Both `main-poll.ts` and `main-scan.ts` use this pattern. The `USE_SQLITE` env var in `.env.example`
-is a comment suggestion that is not checked in code.
-
----
-
-## Known Tradeoffs (Accepted)
-
-1. **4-hour polling lag**: Irrelevant when Buffer is the review interface
-2. **Buffer review UX**: Native Buffer editing is simpler than GitHub Issues workflow
-3. **Voice loop is asynchronous**: 2h delay from publish to voice history — acceptable
-4. **Heuristic detection has false positives**: Rare, and modules returning null ≠ crash
-5. **Supabase inactivity pause**: 4h cron + keepalive query prevents in normal use
-6. **Buffer token manual rotation**: Unavoidable without a running OAuth server
-7. **Chile DST**: `date-fns-tz` + `America/Santiago` IANA handles this. Never hardcode UTC offset.
-8. **Sent scanner text matching**: Uses similarity threshold (0.3) instead of ID matching because
-   Buffer Idea IDs differ from published post IDs. Posts rewritten >70% won't match.
+| Component | Type | Trigger |
+|-----------|------|---------|
+| `getdevcast-webhook` | Cloud Run Service | HTTP (always on, scales to zero) |
+| `devcast-worker` | Cloud Run Job | Cloud Scheduler every 15 min |
+| `devcast-scanner` | Cloud Run Job | Cloud Scheduler every 2h |
+| `app.devcast.lilicurl.com` | Custom domain → Cloud Run | DNS CNAME |
+| CI/CD | GitHub Actions + WIF | Push to trunk |
 
 ---
 
 ## How to Start a New Session
 
-The MVP is fully implemented — all 34 source files, 3 workflows, and 3 scripts exist.
-
 1. Read this file fully
-2. Read `content-generator-v2.md` for the module system design
+2. Check `phase1-spec.md` and `content-intelligence-spec.md` for current roadmap
 3. Run `ls src/` to see what exists before modifying anything
 4. Run `npm run typecheck` to verify the build is clean
 5. When implementing a new module, test it standalone via `npm run test-analyze`
-6. No test suite exists yet — vitest is configured but no `.test.ts` files have been written
+6. No test suite exists yet — vitest is configured but no `.test.ts` files
 
 ---
 
-*Architecture locked. MVP complete.*
+*Phase 1 (GitHub Marketplace) complete. Phase 2 (Content Intelligence Agent) in design.*
