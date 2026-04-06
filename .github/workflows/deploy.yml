@@ -1,0 +1,39 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build image
+        run: |
+          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
+          gcloud builds submit --tag "$IMAGE" --project lilicurl
+
+      - name: Deploy webhook service
+        run: |
+          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
+          gcloud run services update getdevcast-webhook \
+            --image "$IMAGE" \
+            --region us-central1 \
+            --project lilicurl
