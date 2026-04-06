@@ -99,10 +99,11 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     .from('tenants')
     .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, linkedin_member_id, config')
     .eq('id', job.tenant_id)
+    .eq('active', true)
     .single();
 
   if (tenantError || !tenantData) {
-    throw new Error(`Tenant ${job.tenant_id} not found: ${tenantError?.message ?? 'no data'}`);
+    throw new Error(`Tenant ${job.tenant_id} not found or inactive: ${tenantError?.message ?? 'no data'}`);
   }
   const tenant = tenantData as TenantRow;
   const config = buildConfig(tenant);

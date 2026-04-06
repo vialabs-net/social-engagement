@@ -1,9 +1,9 @@
 name: Poll and Generate
 
 on:
-  schedule:
-    - cron: '0 */4 * * *'    # every 4 hours
-  workflow_dispatch:           # manual trigger for testing
+  # schedule disabled — replaced by multi-tenant webhook + worker pipeline
+  # - cron: '0 */4 * * *'
+  workflow_dispatch:           # manual trigger for local testing only
 
 permissions:
   contents: read
