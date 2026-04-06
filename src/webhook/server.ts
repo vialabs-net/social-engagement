@@ -1,4 +1,10 @@
 import { createServer } from 'http';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FAVICON = readFileSync(resolve(__dirname, '../../public/favicon.png'));
 import { createClient } from '@supabase/supabase-js';
 import { handleGithubWebhook } from './github-handler.js';
 import { handleOnboardGet, handleOnboardPost } from './handlers/onboard.js';
@@ -35,6 +41,13 @@ function parseUrl(raw: string): { path: string; query: URLSearchParams } {
 
 const server = createServer((req, res) => {
   const { path, query } = parseUrl(req.url ?? '/');
+
+  // Favicon
+  if (req.method === 'GET' && path === '/favicon.png') {
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    res.end(FAVICON);
+    return;
+  }
 
   // Health check — Cloud Run requires this to mark the instance healthy
   if (req.method === 'GET' && path === '/health') {
