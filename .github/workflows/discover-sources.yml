@@ -1,0 +1,35 @@
+name: Discover Content Sources
+
+on:
+  schedule:
+    # 1st of each month, 8am CLT (UTC-3 = 11:00 UTC in winter, UTC-4 = 12:00 UTC in summer)
+    # Using 12:00 UTC as a safe approximation for 8am CLT
+    - cron: '0 12 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log only, no DB writes)'
+        type: boolean
+        default: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Discover sources from OPML repos
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: npx tsx src/content/scripts/discover-sources-main.ts
