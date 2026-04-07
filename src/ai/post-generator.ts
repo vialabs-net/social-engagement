@@ -26,6 +26,7 @@ export async function generatePosts(
   storage: IVoiceStorage,
   config: Config,
   recentModuleIds: string[] = [],
+  industryContext?: string,
 ): Promise<GeneratedPosts> {
   if (findings.length === 0) {
     throw new Error('generatePosts called with 0 findings — caller should skip this call');
@@ -37,9 +38,14 @@ export async function generatePosts(
   const voiceExamples = selectVoiceExamples(voicePool, findings, config.posting.voice_examples_count);
 
   const systemPrompt = buildSystemPrompt(config);
-  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, config, recentModuleIds);
+  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, config, recentModuleIds, industryContext);
 
-  logger.info('ai.generate.start', { sha: commit.sha, repo: commit.repo, findings: findings.length });
+  logger.info('ai.generate.start', {
+    sha: commit.sha,
+    repo: commit.repo,
+    findings: findings.length,
+    has_industry_context: industryContext !== undefined,
+  });
 
   const rawResponse = await client.complete(systemPrompt, userPrompt);
 
