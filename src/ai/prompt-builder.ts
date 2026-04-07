@@ -112,6 +112,7 @@ export function buildUserPrompt(
   voiceExamples: VoicePost[],
   config: Config,
   recentModuleIds: string[] = [],
+  industryContext?: string,
 ): string {
   const parts: string[] = [];
 
@@ -171,6 +172,14 @@ export function buildUserPrompt(
 Recent posts covered these analysis modules (most frequent first): ${ranked}.
 If the top finding above is from a frequently repeated module, use a fresh angle — different metaphor, different structural pattern, or highlight a different aspect. The technical content differs, but repeated framing makes posts feel similar.
 </module_variety_hint>\n`);
+  }
+
+  // Industry context — injected before task when a strong match was found
+  if (industryContext) {
+    parts.push(`<industry_context>
+${industryContext}
+You built this. The industry is discussing what you already practice.
+</industry_context>\n`);
   }
 
   // Task at BOTTOM

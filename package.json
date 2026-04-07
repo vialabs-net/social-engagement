@@ -19,12 +19,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
+    "@extractus/article-extractor": "^8.0.20",
+    "@extractus/feed-extractor": "^7.1.7",
     "@octokit/rest": "^21.0.2",
     "@supabase/supabase-js": "^2.47.10",
     "better-sqlite3": "^11.7.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "diff": "^7.0.0",
+    "openai": "^6.33.0",
+    "p-limit": "^7.3.0",
+    "puppeteer": "^24.40.0",
+    "puppeteer-core": "^24.40.0",
     "yaml": "^2.7.0",
     "zod": "^3.24.1"
   },

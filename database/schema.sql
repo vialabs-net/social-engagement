@@ -99,18 +99,164 @@ CREATE INDEX IF NOT EXISTS idx_job_queue_pending
   WHERE status = 'pending';
 
 -- ─────────────────────────────────────────────────────────
+-- CONTENT INTELLIGENCE — Phase 2
+-- ─────────────────────────────────────────────────────────
+
+-- pgvector extension (required for article_chunks.embedding)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- RSS/blog sources registry
+CREATE TABLE IF NOT EXISTS content_sources (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                TEXT NOT NULL,
+  url                 TEXT NOT NULL UNIQUE,
+  rss_url             TEXT NOT NULL,
+  trust               TEXT NOT NULL DEFAULT 'open',     -- 'curated' | 'verified' | 'open'
+  status              TEXT NOT NULL DEFAULT 'queued',   -- 'queued' | 'active' | 'probation' | 'disabled' | 'unreachable'
+  -- quality stats
+  articles_evaluated  INTEGER NOT NULL DEFAULT 0,
+  articles_passed     INTEGER NOT NULL DEFAULT 0,
+  best_score_30d      INTEGER NOT NULL DEFAULT 0,
+  -- value stats
+  matched_count       INTEGER NOT NULL DEFAULT 0,
+  last_matched_at     TIMESTAMPTZ,
+  -- health stats
+  fetch_failures      INTEGER NOT NULL DEFAULT 0,
+  last_fetch_ok_at    TIMESTAMPTZ,
+  -- lifecycle
+  added_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  disabled_at         TIMESTAMPTZ,
+  discovered_from     TEXT    -- 'awesome-tech-rss' | 'engineering-blogs' | 'both' | 'manual'
+);
+
+-- Classified and stored articles
+CREATE TABLE IF NOT EXISTS content_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id       UUID REFERENCES content_sources(id),
+  fetched_at      TIMESTAMPTZ DEFAULT NOW(),
+  week_of         DATE NOT NULL,
+  url             TEXT NOT NULL UNIQUE,
+  title           TEXT NOT NULL,
+  content_text    TEXT NOT NULL,         -- full extracted article text (enables re-classification)
+  summary         TEXT NOT NULL,         -- AI-generated summary from classifier
+  main_thesis     TEXT NOT NULL,
+  key_insights    TEXT[] NOT NULL,
+  tech_concepts   TEXT[] NOT NULL,
+  quality_score   INTEGER NOT NULL,
+  times_matched   INTEGER NOT NULL DEFAULT 0,
+  title_hash      TEXT NOT NULL,         -- SHA-256 of lowercase(title), for exact dedup
+  fingerprint     TEXT NOT NULL          -- first 200 words lowercase, for fuzzy dedup
+);
+
+-- Article chunks with vector embeddings for semantic search
+CREATE TABLE IF NOT EXISTS article_chunks (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE,
+  chunk_index     INTEGER NOT NULL,
+  chunk_text      TEXT NOT NULL,
+  embedding       vector(1536),
+  UNIQUE(content_item_id, chunk_index)
+);
+
+-- CRON run history for observability + trend analysis
+CREATE TABLE IF NOT EXISTS content_pipeline_runs (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- volume
+  sources_active        INTEGER NOT NULL DEFAULT 0,
+  sources_queued        INTEGER NOT NULL DEFAULT 0,
+  sources_promoted      INTEGER NOT NULL DEFAULT 0,
+  articles_fetched      INTEGER NOT NULL DEFAULT 0,
+  articles_extracted    INTEGER NOT NULL DEFAULT 0,
+  extraction_failures   INTEGER NOT NULL DEFAULT 0,
+  articles_deduped      INTEGER NOT NULL DEFAULT 0,
+  articles_preskipped   INTEGER NOT NULL DEFAULT 0,
+  articles_structural   INTEGER NOT NULL DEFAULT 0,
+  articles_classified   INTEGER NOT NULL DEFAULT 0,
+  articles_stored       INTEGER NOT NULL DEFAULT 0,
+  chunks_embedded       INTEGER NOT NULL DEFAULT 0,
+  -- quality
+  avg_quality_score     REAL,
+  score_distribution    JSONB,   -- {"1-3": 5, "4-6": 30, "7-8": 12, "9-10": 3}
+  -- matching (from commits processed since last run)
+  commits_with_match    INTEGER NOT NULL DEFAULT 0,
+  commits_without_match INTEGER NOT NULL DEFAULT 0,
+  match_skip_failures   INTEGER NOT NULL DEFAULT 0,
+  -- errors
+  classify_json_errors  INTEGER NOT NULL DEFAULT 0,
+  embed_failures        INTEGER NOT NULL DEFAULT 0
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_title_hash ON content_items(title_hash);
+
+CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding
+  ON article_chunks USING hnsw (embedding vector_cosine_ops)
+  WITH (m=16, ef_construction=64);
+
+-- ─────────────────────────────────────────────────────────
+-- FUNCTIONS (RPCs called from application code)
+-- ─────────────────────────────────────────────────────────
+
+-- pgvector similarity search used by matcher Stage 1
+CREATE OR REPLACE FUNCTION match_article_chunks(
+  query_embedding     vector(1536),
+  similarity_threshold FLOAT,
+  match_count         INT,
+  min_quality_score   INT,
+  week_of_cutoff      DATE
+)
+RETURNS TABLE (content_item_id UUID, similarity FLOAT)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    ac.content_item_id,
+    1 - (ac.embedding <=> query_embedding) AS similarity
+  FROM article_chunks ac
+  JOIN content_items ci ON ci.id = ac.content_item_id
+  WHERE
+    1 - (ac.embedding <=> query_embedding) >= similarity_threshold
+    AND ci.quality_score >= min_quality_score
+    AND ci.week_of >= week_of_cutoff
+  ORDER BY ac.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
+-- Atomic increment of match counters (called after a strong match is found)
+CREATE OR REPLACE FUNCTION increment_content_match(
+  p_article_id UUID,
+  p_source_id  UUID
+)
+RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE content_items
+     SET times_matched = times_matched + 1
+   WHERE id = p_article_id;
+
+  UPDATE content_sources
+     SET matched_count    = matched_count + 1,
+         last_matched_at  = NOW()
+   WHERE id = p_source_id;
+$$;
+
+-- ─────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
 -- ─────────────────────────────────────────────────────────
 -- Enable RLS on all tables. No public policies = anon key has zero access.
 -- GitHub Actions must use SUPABASE_SERVICE_ROLE_KEY (bypasses RLS).
 -- The anon key is only safe for local dev with SQLite (see .env.example).
 
-ALTER TABLE voice_posts      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pending_batch    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE events_state     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scheduled_slots  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tenants          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE job_queue        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE voice_posts              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_batch            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events_state             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_slots          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE job_queue                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_sources          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_items            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE article_chunks           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_pipeline_runs    ENABLE ROW LEVEL SECURITY;
 
 -- ─────────────────────────────────────────────────────────
 -- MIGRATION — run this block on existing Supabase installations

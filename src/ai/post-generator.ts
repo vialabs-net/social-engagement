@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder.js';
 import { computeEditRatio } from '../voice/similarity.js';
-import type { AnthropicClient, PromptError } from './client.js';
+import type { IAIClient } from './types.js';
 import type { Finding } from '../analysis/types.js';
 import type { IVoiceStorage, VoicePost } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
@@ -20,12 +20,13 @@ export interface GeneratedPosts {
  * If Claude fails, the error propagates — no draft is stored.
  */
 export async function generatePosts(
-  client: AnthropicClient,
+  client: IAIClient,
   commit: EnrichedCommit,
   findings: Finding[],
   storage: IVoiceStorage,
   config: Config,
   recentModuleIds: string[] = [],
+  industryContext?: string,
 ): Promise<GeneratedPosts> {
   if (findings.length === 0) {
     throw new Error('generatePosts called with 0 findings — caller should skip this call');
@@ -37,9 +38,14 @@ export async function generatePosts(
   const voiceExamples = selectVoiceExamples(voicePool, findings, config.posting.voice_examples_count);
 
   const systemPrompt = buildSystemPrompt(config);
-  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, config, recentModuleIds);
+  const userPrompt = buildUserPrompt(commit, findings, voiceExamples, config, recentModuleIds, industryContext);
 
-  logger.info('ai.generate.start', { sha: commit.sha, repo: commit.repo, findings: findings.length });
+  logger.info('ai.generate.start', {
+    sha: commit.sha,
+    repo: commit.repo,
+    findings: findings.length,
+    has_industry_context: industryContext !== undefined,
+  });
 
   const rawResponse = await client.complete(systemPrompt, userPrompt);
 
@@ -136,4 +142,4 @@ function selectVoiceExamples(
   return [...anchors, ...topicMatches];
 }
 
-export type { PromptError };
+export type { PromptError } from './anthropic-adapter.js';

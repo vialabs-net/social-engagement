@@ -10,6 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? ''
 const ANTHROPIC_API_KEY = process.env['ANTHROPIC_API_KEY'] ?? '';
 const GITHUB_APP_ID = process.env['GITHUB_APP_ID'] ?? '';
 const GITHUB_APP_PRIVATE_KEY = process.env['GITHUB_APP_PRIVATE_KEY'] ?? '';
+const OPENAI_API_KEY = process.env['OPENAI_API_KEY'];
 
 for (const [name, value] of [
   ['SUPABASE_URL', SUPABASE_URL],
@@ -33,6 +34,7 @@ const deps: ProcessJobDeps = {
   supabaseUrl: SUPABASE_URL,
   supabaseServiceKey: SUPABASE_SERVICE_ROLE_KEY,
   anthropicApiKey: ANTHROPIC_API_KEY,
+  openaiApiKey: OPENAI_API_KEY,
 };
 
 /**

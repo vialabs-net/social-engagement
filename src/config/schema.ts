@@ -37,9 +37,15 @@ export const ConfigSchema = z.object({
     analysis_top_n: z.number().int().min(1).max(7).default(3),
   }),
   ai: z.object({
+    provider: z.string().default('anthropic'),
     model: z.string().default('claude-sonnet-4-6'),
     max_tokens: z.number().int().default(1600),
+    classify_model: z.string().default('claude-haiku-4-5'),
   }),
+  embeddings: z.object({
+    provider: z.string().default('openai'),
+    model: z.string().default('text-embedding-3-small'),
+  }).default({}),
   plugins: z.array(z.string()).default([]),
 });
 

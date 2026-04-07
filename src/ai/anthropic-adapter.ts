@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { withRetry, ANTHROPIC_RETRY_POLICY } from '../utils/retry.js';
+import type { IAIClient } from './types.js';
 
 export class PromptError extends Error {
   constructor(message: string) {
@@ -8,7 +9,7 @@ export class PromptError extends Error {
   }
 }
 
-export class AnthropicClient {
+export class AnthropicAdapter implements IAIClient {
   private readonly client: Anthropic;
   readonly model: string;
   readonly maxTokens: number;
@@ -23,10 +24,7 @@ export class AnthropicClient {
     this.maxTokens = maxTokens;
   }
 
-  async complete(
-    systemPrompt: string,
-    userPrompt: string,
-  ): Promise<string> {
+  async complete(systemPrompt: string, userPrompt: string): Promise<string> {
     return withRetry(async () => {
       try {
         const response = await this.client.messages.create({
@@ -45,7 +43,6 @@ export class AnthropicClient {
         const e = err as { status?: number; message?: string };
         if (e.status === 400) throw new PromptError(`Bad request: ${e.message}`);
         if (e.status === 401) throw new Error('Anthropic API: Unauthorized. Check ANTHROPIC_API_KEY.');
-        // All other 4xx are non-retriable (403 Forbidden, 404 Not Found, etc.)
         if (e.status && e.status >= 402 && e.status < 500) {
           throw new PromptError(`Anthropic API ${e.status}: ${e.message}`);
         }

@@ -5,8 +5,9 @@ import { enrichCommit } from '../github/commit-enricher.js';
 import { isInteresting } from '../utils/commit-filter.js';
 import { runPipeline } from '../analysis/pipeline.js';
 import { MODULE_REGISTRY } from '../analysis/modules/index.js';
-import { AnthropicClient } from '../ai/client.js';
+import { createAIClient, createEmbedder } from '../ai/factory.js';
 import { generatePosts } from '../ai/post-generator.js';
+import { matchFindingsToArticles } from '../content/matcher.js';
 import { BufferClient } from '../buffer/client.js';
 import { publishToBuffer } from '../buffer/publisher.js';
 import { notifyNewDraft } from '../review/notifier.js';
@@ -42,6 +43,7 @@ export interface ProcessJobDeps {
   readonly supabaseUrl: string;
   readonly supabaseServiceKey: string;
   readonly anthropicApiKey: string;
+  readonly openaiApiKey?: string;
 }
 
 /**
@@ -123,12 +125,11 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   );
 
   const github = new GitHubClient(installationToken);
-  const anthropic = new AnthropicClient(
-    deps.anthropicApiKey,
-    config.ai.model,
-    config.ai.max_tokens,
-  );
+  const anthropic = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
   const storage = new SupabaseStorage(deps.supabaseUrl, deps.supabaseServiceKey, tenant.id);
+  const embedder = deps.openaiApiKey
+    ? createEmbedder(config.embeddings.provider, deps.openaiApiKey, config.embeddings.model)
+    : null;
 
   const [owner, repo] = job.repo.split('/') as [string, string];
 
@@ -191,7 +192,22 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const { linkedinPost, bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds);
+      // Content matching — inject industry context when a strong match is found.
+      // Graceful degradation: any failure skips context, post generated normally.
+      let industryContext: string | undefined;
+      if (embedder) {
+        try {
+          const match = await matchFindingsToArticles(findings, embedder, anthropic, deps.db);
+          if (match) {
+            industryContext = `Connection: ${match.connection}`;
+            logger.info('content.match.injected', { sha: commit.sha, article: match.articleTitle });
+          }
+        } catch (err) {
+          logger.warn('content.match.skipped', { sha: commit.sha, error: String(err) });
+        }
+      }
+
+      const { linkedinPost, bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds, industryContext);
 
       // Post directly to LinkedIn if connected
       if (tenant.linkedin_access_token && tenant.linkedin_member_id) {
