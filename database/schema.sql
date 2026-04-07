@@ -195,6 +195,52 @@ CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding
   WITH (m=16, ef_construction=64);
 
 -- ─────────────────────────────────────────────────────────
+-- FUNCTIONS (RPCs called from application code)
+-- ─────────────────────────────────────────────────────────
+
+-- pgvector similarity search used by matcher Stage 1
+CREATE OR REPLACE FUNCTION match_article_chunks(
+  query_embedding     vector(1536),
+  similarity_threshold FLOAT,
+  match_count         INT,
+  min_quality_score   INT,
+  week_of_cutoff      DATE
+)
+RETURNS TABLE (content_item_id UUID, similarity FLOAT)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    ac.content_item_id,
+    1 - (ac.embedding <=> query_embedding) AS similarity
+  FROM article_chunks ac
+  JOIN content_items ci ON ci.id = ac.content_item_id
+  WHERE
+    1 - (ac.embedding <=> query_embedding) >= similarity_threshold
+    AND ci.quality_score >= min_quality_score
+    AND ci.week_of >= week_of_cutoff
+  ORDER BY ac.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
+-- Atomic increment of match counters (called after a strong match is found)
+CREATE OR REPLACE FUNCTION increment_content_match(
+  p_article_id UUID,
+  p_source_id  UUID
+)
+RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE content_items
+     SET times_matched = times_matched + 1
+   WHERE id = p_article_id;
+
+  UPDATE content_sources
+     SET matched_count    = matched_count + 1,
+         last_matched_at  = NOW()
+   WHERE id = p_source_id;
+$$;
+
+-- ─────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
 -- ─────────────────────────────────────────────────────────
 -- Enable RLS on all tables. No public policies = anon key has zero access.
