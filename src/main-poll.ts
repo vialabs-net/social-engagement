@@ -13,7 +13,7 @@ import { enrichCommit } from './github/commit-enricher.js';
 import { runPipeline } from './analysis/pipeline.js';
 import { loadPlugins } from './analysis/plugin-loader.js';
 import { MODULE_REGISTRY } from './analysis/modules/index.js';
-import { AnthropicClient } from './ai/client.js';
+import { createAIClient } from './ai/factory.js';
 import { generatePosts } from './ai/post-generator.js';
 import { BufferClient } from './buffer/client.js';
 import { publishToBuffer } from './buffer/publisher.js';
@@ -37,11 +37,7 @@ async function main(): Promise<void> {
     : new SqliteStorage(process.env['SQLITE_PATH'] ?? 'data/devcast.db', tenantId);
 
   const github = new GitHubClient(process.env['GITHUB_TOKEN'] ?? '');
-  const anthropic = new AnthropicClient(
-    process.env['ANTHROPIC_API_KEY'] ?? '',
-    config.ai.model,
-    config.ai.max_tokens,
-  );
+  const anthropic = createAIClient('anthropic', process.env['ANTHROPIC_API_KEY'] ?? '', config.ai.model, config.ai.max_tokens);
   const bufferClient = new BufferClient(process.env['BUFFER_ACCESS_TOKEN'] ?? '');
 
   // Load events state from storage (SQLite only — Supabase handled separately)

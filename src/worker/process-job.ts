@@ -5,7 +5,7 @@ import { enrichCommit } from '../github/commit-enricher.js';
 import { isInteresting } from '../utils/commit-filter.js';
 import { runPipeline } from '../analysis/pipeline.js';
 import { MODULE_REGISTRY } from '../analysis/modules/index.js';
-import { AnthropicClient } from '../ai/client.js';
+import { createAIClient } from '../ai/factory.js';
 import { generatePosts } from '../ai/post-generator.js';
 import { BufferClient } from '../buffer/client.js';
 import { publishToBuffer } from '../buffer/publisher.js';
@@ -123,11 +123,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   );
 
   const github = new GitHubClient(installationToken);
-  const anthropic = new AnthropicClient(
-    deps.anthropicApiKey,
-    config.ai.model,
-    config.ai.max_tokens,
-  );
+  const anthropic = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
   const storage = new SupabaseStorage(deps.supabaseUrl, deps.supabaseServiceKey, tenant.id);
 
   const [owner, repo] = job.repo.split('/') as [string, string];

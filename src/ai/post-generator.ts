@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder.js';
 import { computeEditRatio } from '../voice/similarity.js';
-import type { AnthropicClient, PromptError } from './client.js';
+import type { IAIClient } from './types.js';
 import type { Finding } from '../analysis/types.js';
 import type { IVoiceStorage, VoicePost } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
@@ -20,7 +20,7 @@ export interface GeneratedPosts {
  * If Claude fails, the error propagates — no draft is stored.
  */
 export async function generatePosts(
-  client: AnthropicClient,
+  client: IAIClient,
   commit: EnrichedCommit,
   findings: Finding[],
   storage: IVoiceStorage,
@@ -136,4 +136,4 @@ function selectVoiceExamples(
   return [...anchors, ...topicMatches];
 }
 
-export type { PromptError };
+export type { PromptError } from './anthropic-adapter.js';
