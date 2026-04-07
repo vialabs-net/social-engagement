@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
+    "@extractus/article-extractor": "^8.0.20",
+    "@extractus/feed-extractor": "^7.1.7",
     "@octokit/rest": "^21.0.2",
     "@supabase/supabase-js": "^2.47.10",
     "better-sqlite3": "^11.7.0",
