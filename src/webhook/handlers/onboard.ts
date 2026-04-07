@@ -23,10 +23,11 @@ function html(tenant: TenantRow, installationId: number, linkedinClientId: strin
   const name = (author['name'] as string | undefined) ?? tenant.github_username;
   const website = (author['website'] as string | undefined) ?? '';
   const bufferOrgId = (buffer['organization_id'] as string | undefined) ?? '';
-  const voiceParts = (tenant.voice_bootstrap ?? '').split('\n---\n');
-  const voice1 = voiceParts[0]?.trim() ?? '';
-  const voice2 = voiceParts[1]?.trim() ?? '';
-  const voice3 = voiceParts[2]?.trim() ?? '';
+  let voiceParts: string[] = [];
+  try { voiceParts = JSON.parse(tenant.voice_bootstrap ?? '[]') as string[]; } catch { voiceParts = []; }
+  const voice1 = voiceParts[0] ?? '';
+  const voice2 = voiceParts[1] ?? '';
+  const voice3 = voiceParts[2] ?? '';
 
   const linkedinConnected = !!tenant.linkedin_member_id;
   const linkedinSection = linkedinConnected
@@ -170,7 +171,7 @@ export async function handleOnboardPost(
   const voice1 = params.get('voice_1')?.trim() ?? '';
   const voice2 = params.get('voice_2')?.trim() ?? '';
   const voice3 = params.get('voice_3')?.trim() ?? '';
-  const voiceBootstrap = [voice1, voice2, voice3].filter(Boolean).join('\n---\n');
+  const voiceBootstrap = JSON.stringify([voice1, voice2, voice3].filter(Boolean));
 
   if (isNaN(installationId) || !name) {
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=missing_fields` };
