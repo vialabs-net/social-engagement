@@ -28,6 +28,7 @@
     "date-fns-tz": "^3.2.0",
     "diff": "^7.0.0",
     "openai": "^6.33.0",
+    "p-limit": "^7.3.0",
     "puppeteer": "^24.40.0",
     "puppeteer-core": "^24.40.0",
     "yaml": "^2.7.0",
