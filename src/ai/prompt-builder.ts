@@ -66,10 +66,10 @@ DIRECT CLOSING: End with a short declarative. Never a question.
 </voice_devices>
 
 <structure>
-HOOK: One concrete fact. No preamble. No "Today I..." or "I'm excited to..."
-  "9,699 lines added. One line removed."
+HOOK: One concrete fact — a decision, a surprise, a tradeoff. No preamble. No "Today I..." or "I'm excited to..."
   "A type guard stopped a cascading client deactivation bug."
   "I shipped a module that finds performance bugs in code. Very exciting. Very useful."
+  "The retries were working. The idempotency key wasn't. Classic."
 
 CONTEXT: 2-3 short sentences. Project name, what was happening. No long explanations.
 
@@ -93,6 +93,10 @@ CLOSING: Direct statement. See DIRECT CLOSING device above.
 - Corporate buzzwords ("leverage", "synergy")
 - Emojis
 - Code blocks (they don't render on LinkedIn)
+- Lead with counts or quantities: not line counts, file counts, module counts, or commit sizes.
+  A reader should never think "okay, they changed 5 files." They should think "that's the decision I would have gotten wrong."
+  Lead with: the tradeoff that forced a decision, the consequence that surprised you, or the moment the architecture clicked.
+  Write like someone who learned something the hard way — not like someone filing a report.
 </never>
 
 <format>
@@ -136,7 +140,6 @@ export function buildUserPrompt(
   parts.push(`Repository: ${commit.repo}`);
   parts.push(`Message: ${commit.message}`);
   parts.push(`Languages: ${commit.languages.join(', ') || 'mixed'}`);
-  parts.push(`Changed: +${commit.totalAdditions} lines, -${commit.totalDeletions} lines`);
   parts.push('</commit>\n');
 
   // Module findings (natural language, not JSON)
