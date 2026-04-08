@@ -5,6 +5,7 @@ interface SourceRow {
   id: string;
   name: string;
   status: string;
+  is_protected: boolean;
   articles_evaluated: number;
   articles_passed: number;
   best_score_30d: number;
@@ -33,7 +34,7 @@ const MAX_FETCH_FAILURES = 5;
 export async function evaluateSourceLifecycle(db: SupabaseClient): Promise<void> {
   const { data, error } = await db
     .from('content_sources')
-    .select('id, name, status, articles_evaluated, articles_passed, best_score_30d, matched_count, added_at, fetch_failures')
+    .select('id, name, status, is_protected, articles_evaluated, articles_passed, best_score_30d, matched_count, added_at, fetch_failures')
     .in('status', ['active', 'probation', 'unreachable']);
 
   if (error) {
@@ -48,8 +49,14 @@ export async function evaluateSourceLifecycle(db: SupabaseClient): Promise<void>
   let toProbation = 0;
   let toDisabled = 0;
   let toUnreachable = 0;
+  let protectedSkipped = 0;
 
   for (const source of sources) {
+    if (source.is_protected) {
+      protectedSkipped++;
+      continue;
+    }
+
     const ageMs = now - new Date(source.added_at).getTime();
     const ageDays = ageMs / (1000 * 60 * 60 * 24);
     const hitRate = source.articles_evaluated > 0
@@ -108,7 +115,13 @@ export async function evaluateSourceLifecycle(db: SupabaseClient): Promise<void>
   // Expire old disabled sources back to active if they're still in reference repos
   // (implemented as manual override via sources.yml — not automated here)
 
-  logger.info('content.evaluator.done', { toActive, toProbation, toDisabled, toUnreachable });
+  logger.info('content.evaluator.done', {
+    toActive,
+    toProbation,
+    toDisabled,
+    toUnreachable,
+    protectedSkipped,
+  });
 }
 
 async function setStatus(

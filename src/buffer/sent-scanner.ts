@@ -87,6 +87,7 @@ async function scanPlatform(
         edit_ratio: bestScore,
         published_at: publishedAt,
         linkedin_urn: linkedinUrn,
+        publish_source: 'buffer',
       });
       logger.info('sent_scanner.matched', {
         draftId: bestDraft.id,

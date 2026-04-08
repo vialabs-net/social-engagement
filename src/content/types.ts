@@ -19,6 +19,7 @@ export interface ContentSource {
   readonly added_at: string;
   readonly disabled_at: string | null;
   readonly discovered_from: DiscoveredFrom | null;
+  readonly is_protected: boolean;
 }
 
 export interface ContentItem {
@@ -33,6 +34,7 @@ export interface ContentItem {
   readonly main_thesis: string;
   readonly key_insights: string[];
   readonly tech_concepts: string[];
+  readonly seed_modules: string[] | null;
   readonly quality_score: number;
   readonly times_matched: number;
   readonly title_hash: string;

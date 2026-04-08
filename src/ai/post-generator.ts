@@ -3,7 +3,7 @@ import { buildSystemPrompt, buildUserPrompt } from './prompt-builder.js';
 import { computeEditRatio } from '../voice/similarity.js';
 import type { IAIClient } from './types.js';
 import type { Finding } from '../analysis/types.js';
-import type { IVoiceStorage, VoicePost } from '../voice/storage.js';
+import type { IVoiceStorage, SaveDraftInput, VoicePost } from '../voice/storage.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { Config } from '../config/schema.js';
 
@@ -27,6 +27,7 @@ export async function generatePosts(
   config: Config,
   recentModuleIds: string[] = [],
   industryContext?: string,
+  draftMetadata: Partial<SaveDraftInput> = {},
 ): Promise<GeneratedPosts> {
   if (findings.length === 0) {
     throw new Error('generatePosts called with 0 findings — caller should skip this call');
@@ -64,6 +65,7 @@ export async function generatePosts(
     top_finding: topFinding,
     top_module_id: topModuleId,
     findings_count: findingsCount,
+    ...draftMetadata,
   });
 
   // Buffer Idea text includes both variants so Liliana can copy per platform in the UI

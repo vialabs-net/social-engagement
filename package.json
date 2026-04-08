@@ -14,6 +14,9 @@
     "poll": "tsx --env-file=.env.local src/main-poll.ts",
     "scan": "tsx --env-file=.env.local src/main-scan.ts",
     "gen-image-prompt": "tsx --env-file=.env.local scripts/gen-image-prompt.ts",
+    "seed-corpus:extract": "tsx --env-file=.env.local scripts/seed-corpus/extract-text.ts",
+    "seed-corpus:validate": "tsx --env-file=.env.local scripts/seed-corpus/validate.ts",
+    "seed-corpus:seed": "tsx --env-file=.env.local scripts/seed-corpus/seed.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

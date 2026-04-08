@@ -23,17 +23,60 @@ async function main(): Promise<void> {
 
   const db = createClient(supabaseUrl, supabaseKey);
 
-  // 1. Expire old content (45-day window, cascades to article_chunks)
+  // 1. Expire old content (45-day window, cascades to article_chunks).
+  // Protected sources are permanent corpus anchors and must survive cleanup.
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-  const { error: expireError, count } = await db
+  const { data: protectedSources, error: protectedError } = await db
+    .from('content_sources')
+    .select('id')
+    .eq('is_protected', true);
+
+  if (protectedError) {
+    throw new Error(`Failed to load protected sources before cleanup: ${protectedError.message}`);
+  }
+
+  const protectedSourceIds = new Set(
+    (protectedSources ?? []).map((row) => (row as { id: string }).id),
+  );
+
+  const { data: oldRows, error: oldRowsError } = await db
     .from('content_items')
-    .delete({ count: 'exact' })
+    .select('id, source_id')
     .lt('week_of', cutoff);
 
-  if (expireError) {
-    logger.warn('content.cleanup.expire_error', { error: expireError.message });
+  if (oldRowsError) {
+    throw new Error(`Failed to load old content rows before cleanup: ${oldRowsError.message}`);
+  }
+
+  const expiredRows = (oldRows ?? []) as Array<{ id: string; source_id: string | null }>;
+  const idsToDelete = expiredRows
+    .filter((row) => row.source_id === null || !protectedSourceIds.has(row.source_id))
+    .map((row) => row.id);
+  const retainedProtected = expiredRows.length - idsToDelete.length;
+
+  if (idsToDelete.length === 0) {
+    logger.info('content.cleanup.expired', {
+      articles_deleted: 0,
+      retained_protected: retainedProtected,
+      protected_sources: protectedSourceIds.size,
+      cutoff,
+    });
   } else {
-    logger.info('content.cleanup.expired', { articles_deleted: count ?? 0, cutoff });
+    const { error: expireError } = await db
+      .from('content_items')
+      .delete()
+      .in('id', idsToDelete);
+
+    if (expireError) {
+      logger.warn('content.cleanup.expire_error', { error: expireError.message });
+    } else {
+      logger.info('content.cleanup.expired', {
+        articles_deleted: idsToDelete.length,
+        retained_protected: retainedProtected,
+        protected_sources: protectedSourceIds.size,
+        cutoff,
+      });
+    }
   }
 
   // 2. Source lifecycle evaluation
@@ -46,16 +89,16 @@ async function main(): Promise<void> {
     .eq('status', 'published')
     .not('edit_ratio', 'is', null);
 
-  const rows = (engagementData ?? []) as Array<{
+  const engagementRows = (engagementData ?? []) as Array<{
     ai_draft: string;
     edit_ratio: number | null;
     engagement_score: number | null;
   }>;
 
-  const withContext = rows.filter((r) => r.ai_draft.includes('<industry_context>'));
-  const withoutContext = rows.filter((r) => !r.ai_draft.includes('<industry_context>'));
+  const withContext = engagementRows.filter((r) => r.ai_draft.includes('<industry_context>'));
+  const withoutContext = engagementRows.filter((r) => !r.ai_draft.includes('<industry_context>'));
 
-  const avgEditRatio = (arr: typeof rows): number | null => {
+  const avgEditRatio = (arr: typeof engagementRows): number | null => {
     const vals = arr.map((r) => r.edit_ratio).filter((v): v is number => v !== null);
     return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
   };
