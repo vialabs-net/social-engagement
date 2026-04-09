@@ -13,7 +13,9 @@ const MIN_WORD_COUNT_RESULT = 100;   // below this = extraction failed
 const MIN_WORD_COUNT_ACCEPT = 300;   // below this = use Puppeteer fallback for curated
 const BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 const DEFAULT_PUPPETEER_FALLBACK_HOSTS = [
+  'blog.python.org',
   'discord.com',
+  'quarkus.io',
   'stripe.com',
   'www.linkedin.com',
 ] as const;
@@ -135,18 +137,19 @@ async function extractFromUrl(url: string): Promise<ArticleText | null> {
 
       const signal = AbortSignal.timeout(EXTRACT_TIMEOUT_MS);
       const article = await extract(url, {}, { signal, headers: profile.headers });
-      if (!article?.content) return null;
+      const normalizedArticle = normalizeExtractedArticle(article);
+      if (normalizedArticle) return normalizedArticle;
 
-      const text = stripHtml(article.content);
-      const wordCount = countWords(text);
-      if (wordCount < MIN_WORD_COUNT_RESULT) return null;
-
-      return {
-        title: article.title ?? '',
-        text,
-        wordCount,
-        publishedAt: article.published ? new Date(article.published) : null,
-      };
+      const htmlFallback = await extractFromHtml(url, profile.headers);
+      if (htmlFallback) {
+        logger.info('content.extract.url.html_fallback', {
+          url,
+          host,
+          profile: profile.name,
+          wordCount: htmlFallback.wordCount,
+        });
+        return htmlFallback;
+      }
     } catch (err) {
       logger.debug('content.extract.url.fail', {
         url,
@@ -168,6 +171,82 @@ async function extractFromUrl(url: string): Promise<ArticleText | null> {
   }
 
   return null;
+}
+
+function normalizeExtractedArticle(
+  article: {
+    title?: string | null;
+    content?: string | null;
+    published?: string | Date | null;
+  } | null | undefined,
+): ArticleText | null {
+  if (!article?.content) return null;
+
+  const text = stripHtml(article.content);
+  const wordCount = countWords(text);
+  if (wordCount < MIN_WORD_COUNT_RESULT) return null;
+
+  return {
+    title: article.title ?? '',
+    text,
+    wordCount,
+    publishedAt: article.published ? new Date(article.published) : null,
+  };
+}
+
+async function extractFromHtml(
+  url: string,
+  headers: Record<string, string>,
+): Promise<ArticleText | null> {
+  const host = getHostname(url);
+
+  try {
+    const signal = AbortSignal.timeout(EXTRACT_TIMEOUT_MS);
+    const response = await fetch(url, {
+      headers,
+      redirect: 'follow',
+      signal,
+    });
+
+    if (!response.ok) {
+      logger.debug('content.extract.html_fetch.bad_status', {
+        url,
+        host,
+        status: response.status,
+      });
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('html')) {
+      logger.debug('content.extract.html_fetch.unsupported_type', {
+        url,
+        host,
+        contentType,
+      });
+      return null;
+    }
+
+    const html = await response.text();
+    const htmlSlice = extractRelevantHtml(url, html);
+    const text = stripHtml(htmlSlice);
+    const wordCount = countWords(text);
+    if (wordCount < MIN_WORD_COUNT_RESULT) return null;
+
+    return {
+      title: extractHtmlTitle(html),
+      text,
+      wordCount,
+      publishedAt: extractPublishedAtFromHtml(html),
+    };
+  } catch (err) {
+    logger.debug('content.extract.html_fetch.fail', {
+      url,
+      host,
+      error: String(err),
+    });
+    return null;
+  }
 }
 
 async function extractWithPuppeteer(url: string): Promise<ArticleText | null> {
@@ -278,6 +357,71 @@ export function stripHtml(html: string): string {
 
 export function countWords(text: string): number {
   return text.split(/\s+/).filter((w) => w.length > 0).length;
+}
+
+function extractRelevantHtml(url: string, html: string): string {
+  const host = getHostname(url);
+
+  const hostSpecificSlice = (
+    host === 'quarkus.io'
+      ? sliceBetween(
+          html,
+          /<div\b[^>]*class="[^"]*\bdoc-content\b[^"]*"[^>]*>/i,
+          /<div\b[^>]*class="[^"]*\bproject-footer\b[^"]*"[^>]*>/i,
+        )
+      : null
+  );
+
+  return hostSpecificSlice
+    ?? extractTagContent(html, 'article')
+    ?? extractTagContent(html, 'main')
+    ?? extractTagContent(html, 'body')
+    ?? html;
+}
+
+function extractTagContent(html: string, tagName: string): string | null {
+  const match = html.match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+  return match?.[1] ?? null;
+}
+
+function sliceBetween(
+  html: string,
+  startPattern: RegExp,
+  endPattern: RegExp,
+): string | null {
+  const startMatch = startPattern.exec(html);
+  if (!startMatch || startMatch.index === undefined) return null;
+
+  const sliced = html.slice(startMatch.index);
+  const endMatch = endPattern.exec(sliced);
+  if (!endMatch || endMatch.index === undefined) return null;
+
+  return sliced.slice(0, endMatch.index);
+}
+
+function extractHtmlTitle(html: string): string {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1] ? stripHtml(match[1]) : '';
+}
+
+function extractPublishedAtFromHtml(html: string): Date | null {
+  const patterns = [
+    /<meta[^>]+property="article:published_time"[^>]+content="([^"]+)"/i,
+    /<meta[^>]+content="([^"]+)"[^>]+property="article:published_time"/i,
+    /<time[^>]+datetime="([^"]+)"/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (!match?.[1]) continue;
+
+    const publishedAt = new Date(match[1]);
+    if (!Number.isNaN(publishedAt.getTime())) {
+      return publishedAt;
+    }
+  }
+
+  return null;
 }
 
 function getUrlRequestProfiles(url: string): UrlRequestProfile[] {
