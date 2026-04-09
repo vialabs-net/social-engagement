@@ -1,5 +1,15 @@
 [
   {
+    "id": "9",
+    "url": "https://www.linkedin.com/blog/engineering/search/reimagining-linkedins-search-stack",
+    "reason": "extractor_returned_null"
+  },
+  {
+    "id": "12",
+    "url": "https://www.uber.com/blog/from-static-rate-limiting-to-intelligent-load-management/",
+    "reason": "extractor_returned_null"
+  },
+  {
     "id": "13",
     "url": "https://www.uber.com/blog/how-uber-serves-over-150-million-reads/",
     "reason": "extractor_returned_null"
@@ -7,6 +17,26 @@
   {
     "id": "14",
     "url": "https://www.uber.com/blog/ureview/",
+    "reason": "extractor_returned_null"
+  },
+  {
+    "id": "15",
+    "url": "https://www.uber.com/blog/perfinsights/",
+    "reason": "extractor_returned_null"
+  },
+  {
+    "id": "23",
+    "url": "https://www.linkedin.com/blog/engineering/infrastructure/how-design-patterns-power-linkedin-infrastructure",
+    "reason": "extractor_returned_null"
+  },
+  {
+    "id": "25",
+    "url": "https://www.linkedin.com/blog/engineering/architecture/navigating-the-transition-adopting-azure-linux-as-linkedins-operatingsystem",
+    "reason": "extractor_returned_null"
+  },
+  {
+    "id": "39",
+    "url": "https://www.uber.com/blog/automating-efficiency-of-go-programs-with-pgo/",
     "reason": "extractor_returned_null"
   }
 ]
