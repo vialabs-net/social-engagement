@@ -11,9 +11,28 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: lilicurl
+      REGION: us-central1
+      IMAGE: gcr.io/lilicurl/devcast:${{ github.sha }}
+      SUPABASE_URL: https://wxejktojaeqrieczzcnk.supabase.co
+      GITHUB_APP_ID: "3243238"
+      GCP_KMS_KEY_NAME: projects/lilicurl/locations/global/keyRings/devcast/cryptoKeys/tenant-secrets
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - id: auth
         name: Authenticate to GCP
@@ -30,30 +49,35 @@ jobs:
 
       - name: Build and push image
         run: |
-          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
       - name: Deploy webhook service
         run: |
-          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
           gcloud run services update getdevcast-webhook \
             --image "$IMAGE" \
-            --region us-central1 \
-            --project lilicurl
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
+            --update-secrets "GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,LINKEDIN_CLIENT_ID=LINKEDIN_CLIENT_ID:latest,LINKEDIN_CLIENT_SECRET=LINKEDIN_CLIENT_SECRET:latest,APP_BASE_URL=APP_BASE_URL:latest,GITHUB_APP_CLIENT_ID=GITHUB_APP_CLIENT_ID:latest,GITHUB_APP_CLIENT_SECRET=GITHUB_APP_CLIENT_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+            --quiet
 
       - name: Deploy worker job
         run: |
-          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
           gcloud run jobs update devcast-worker \
             --image "$IMAGE" \
-            --region us-central1 \
-            --project lilicurl
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GITHUB_APP_ID=$GITHUB_APP_ID,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
+            --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+            --quiet
 
       - name: Deploy scanner job
         run: |
-          IMAGE="gcr.io/lilicurl/devcast:${{ github.sha }}"
           gcloud run jobs update devcast-scanner \
             --image "$IMAGE" \
-            --region us-central1 \
-            --project lilicurl
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
+            --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+            --quiet
