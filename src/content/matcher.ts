@@ -19,11 +19,13 @@ interface CandidateArticle {
   main_thesis: string;
   key_insights: string[];
   source_id: string;
+  match_strength: number;
 }
 
 export interface MatchedContext {
   readonly articleId: string;
   readonly sourceId: string;
+  readonly matchStrength: number;
   readonly connection: string;   // one sentence from cross-encoder
   readonly articleTitle: string;
 }
@@ -72,10 +74,11 @@ async function stage1BiEncoder(
   }
 
   // Sort by similarity DESC, take top 3 unique articles
-  const topArticleIds = [...bestByArticle.entries()]
+  const topMatches = [...bestByArticle.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_CANDIDATES)
-    .map(([id]) => id);
+    .map(([id, similarity]) => ({ id, matchStrength: similarity }));
+  const topArticleIds = topMatches.map((match) => match.id);
 
   if (topArticleIds.length === 0) return [];
 
@@ -88,7 +91,14 @@ async function stage1BiEncoder(
     throw new Error(`Failed to fetch candidate articles: ${articleError.message}`);
   }
 
-  return (articles ?? []) as CandidateArticle[];
+  const matchStrengthByArticleId = new Map(topMatches.map((match) => [match.id, match.matchStrength]));
+
+  return ((articles ?? []) as Array<Omit<CandidateArticle, 'match_strength'>>)
+    .map((article) => ({
+      ...article,
+      match_strength: matchStrengthByArticleId.get(article.id) ?? 0,
+    }))
+    .sort((a, b) => b.match_strength - a.match_strength);
 }
 
 /**
@@ -100,7 +110,7 @@ async function stage2CrossEncoder(
   finding: FindingInput,
   candidates: CandidateArticle[],
   aiClient: IAIClient,
-): Promise<{ articleId: string; sourceId: string; connection: string; title: string } | null> {
+): Promise<{ articleId: string; sourceId: string; matchStrength: number; connection: string; title: string } | null> {
   if (candidates.length === 0) return null;
 
   const candidateList = candidates
@@ -157,7 +167,7 @@ Respond as JSON array:
 function findStrongMatch(
   results: Array<{ candidate: number; strength: string; connection: string | null }>,
   candidates: CandidateArticle[],
-): { articleId: string; sourceId: string; connection: string; title: string } | null {
+): { articleId: string; sourceId: string; matchStrength: number; connection: string; title: string } | null {
   for (const result of results) {
     if (result.strength === 'strong' && result.connection) {
       const idx = result.candidate - 1;
@@ -166,6 +176,7 @@ function findStrongMatch(
         return {
           articleId: article.id,
           sourceId: article.source_id,
+          matchStrength: article.match_strength,
           connection: result.connection,
           title: article.title,
         };
@@ -231,12 +242,14 @@ export async function matchFindingsToArticles(
       logger.info('content.match.result', {
         finding: finding.moduleId,
         article: match.title,
+        match_strength: Number(match.matchStrength.toFixed(4)),
         connection: match.connection.slice(0, 80),
       });
 
       return {
         articleId: match.articleId,
         sourceId: match.sourceId,
+        matchStrength: match.matchStrength,
         connection: match.connection,
         articleTitle: match.title,
       };

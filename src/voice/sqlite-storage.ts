@@ -42,16 +42,38 @@ export class SqliteStorage implements IVoiceStorage {
         scheduled_at    TEXT,
         status          TEXT NOT NULL DEFAULT 'pending',
         top_finding     TEXT,
+        top_module_id   TEXT,
         findings_count  INTEGER NOT NULL DEFAULT 0,
+        author_login    TEXT,
+        edit_analysis   TEXT,
+        context_status  TEXT,
+        has_industry_context INTEGER NOT NULL DEFAULT 0,
+        matched_article_id   TEXT,
+        matched_source_id    TEXT,
+        match_strength       REAL,
+        match_connection     TEXT,
         linkedin_urn    TEXT,
+        last_reactions_fetch_at TEXT,
         reactions_count INTEGER NOT NULL DEFAULT 0,
-        engagement_score REAL
+        engagement_score REAL,
+        publish_source  TEXT,
+        tenant_id       TEXT
       );
 
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS linkedin_urn     TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS reactions_count  INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS engagement_score REAL;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS top_module_id    TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS author_login     TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS edit_analysis    TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS context_status   TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS has_industry_context INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS matched_article_id   TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS matched_source_id    TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS match_strength       REAL;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS match_connection     TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS last_reactions_fetch_at TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS publish_source   TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS tenant_id        TEXT;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
@@ -85,11 +107,30 @@ export class SqliteStorage implements IVoiceStorage {
   saveDraft(input: SaveDraftInput): Promise<string> {
     const id = randomUUID();
     this.db.prepare(`
-      INSERT INTO voice_posts (id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count, status, tenant_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    `).run(id, input.commit_sha, input.repo, input.platform, input.ai_draft,
-           input.top_finding ?? null, input.top_module_id ?? null, input.findings_count ?? 0,
-           this.tenantId);
+      INSERT INTO voice_posts (
+        id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count,
+        author_login, context_status, has_industry_context, matched_article_id, matched_source_id,
+        match_strength, match_connection, status, tenant_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `).run(
+      id,
+      input.commit_sha,
+      input.repo,
+      input.platform,
+      input.ai_draft,
+      input.top_finding ?? null,
+      input.top_module_id ?? null,
+      input.findings_count ?? 0,
+      input.author_login ?? null,
+      input.context_status ?? null,
+      input.has_industry_context ? 1 : 0,
+      input.matched_article_id ?? null,
+      input.matched_source_id ?? null,
+      input.match_strength ?? null,
+      input.match_connection ?? null,
+      this.tenantId,
+    );
     return Promise.resolve(id);
   }
 
@@ -107,10 +148,17 @@ export class SqliteStorage implements IVoiceStorage {
     this.db.prepare(`
       UPDATE voice_posts
       SET published = ?, edit_ratio = ?, published_at = ?, status = 'published',
-          linkedin_urn = COALESCE(?, linkedin_urn)
+          linkedin_urn = COALESCE(?, linkedin_urn),
+          publish_source = COALESCE(?, publish_source)
       WHERE id = ?
-    `).run(input.published, input.edit_ratio, input.published_at,
-           input.linkedin_urn ?? null, input.id);
+    `).run(
+      input.published,
+      input.edit_ratio,
+      input.published_at,
+      input.linkedin_urn ?? null,
+      input.publish_source ?? null,
+      input.id,
+    );
     return Promise.resolve();
   }
 

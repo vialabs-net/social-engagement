@@ -5,8 +5,10 @@ import type { ClassifierResult } from './types.js';
 const QUALITY_GATE = 6;
 const BATCH_POLL_INTERVAL_MS = 30_000;   // 30s between polls
 const BATCH_TIMEOUT_MS = 2 * 60 * 60 * 1000;  // 2 hours max wait
+const CLASSIFIER_MAX_TOKENS = 768;
+const CLASSIFIER_TEMPERATURE = 0;
 
-const SYSTEM_PROMPT = `You are evaluating a technical article for depth and originality.
+export const CONTENT_CLASSIFIER_SYSTEM_PROMPT = `You are evaluating a technical article for depth and originality.
 
 Rate the article on a scale of 1-10:
 - 1-3: tutorial, rehash of documentation, or surface-level overview
@@ -55,9 +57,10 @@ export async function classifyArticlesBatch(
   // Submit batch
   const requests: Anthropic.MessageCreateParamsNonStreaming[] = articles.map((article) => ({
     model,
-    max_tokens: 512,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `Title: ${article.title}\n\n${article.text}` }],
+    max_tokens: CLASSIFIER_MAX_TOKENS,
+    temperature: CLASSIFIER_TEMPERATURE,
+    system: CONTENT_CLASSIFIER_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildClassifierUserPrompt(article) }],
   }));
 
   const batchRequests = articles.map((article, i) => ({
@@ -120,29 +123,130 @@ export async function classifyArticlesBatch(
   return classified;
 }
 
-function parseClassifierResponse(raw: string): ClassifierResult | null {
-  // Strip markdown code fences if present
-  const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-  try {
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    const score = Number(parsed['quality_score']);
-    if (isNaN(score)) return null;
+export async function classifyArticleRealtime(
+  article: ArticleToClassify,
+  apiKey: string,
+  model: string,
+): Promise<ClassifierResult> {
+  const client = new Anthropic({ apiKey });
+  return classifyArticleRealtimeWithClient(article, client, model);
+}
 
-    return {
-      quality_score: score,
-      summary: String(parsed['summary'] ?? ''),
-      main_thesis: String(parsed['main_thesis'] ?? ''),
-      key_insights: toStringArray(parsed['key_insights']),
-      tech_concepts: toStringArray(parsed['tech_concepts']),
-    };
-  } catch {
-    return null;
+export async function classifyArticleRealtimeWithClient(
+  article: ArticleToClassify,
+  client: Anthropic,
+  model: string,
+): Promise<ClassifierResult> {
+  const baseUserPrompt = buildClassifierUserPrompt(article);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const userPrompt = attempt === 0
+      ? baseUserPrompt
+      : `${baseUserPrompt}\n\nReturn ONLY valid JSON. Do not wrap it in markdown fences. Do not add commentary before or after the JSON object.`;
+
+    const response = await client.messages.create({
+      model,
+      max_tokens: CLASSIFIER_MAX_TOKENS,
+      temperature: CLASSIFIER_TEMPERATURE,
+      system: CONTENT_CLASSIFIER_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const block = response.content[0];
+    if (block?.type !== 'text') {
+      throw new Error('Classifier returned a non-text response');
+    }
+
+    const parsed = parseClassifierResponse(block.text);
+    if (parsed) {
+      return parsed;
+    }
+
+    logger.warn('content.classify.realtime_json_error', {
+      id: article.id,
+      attempt: attempt + 1,
+      preview: block.text.slice(0, 200),
+    });
   }
+
+  throw new Error(`Classifier returned invalid JSON for article ${article.id}`);
+}
+
+export function parseClassifierResponse(raw: string): ClassifierResult | null {
+  const candidates = buildJsonCandidates(raw);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const score = Number(parsed['quality_score']);
+      if (Number.isNaN(score)) continue;
+
+      return {
+        quality_score: score,
+        summary: String(parsed['summary'] ?? ''),
+        main_thesis: String(parsed['main_thesis'] ?? ''),
+        key_insights: toStringArray(parsed['key_insights']),
+        tech_concepts: toStringArray(parsed['tech_concepts']),
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 function toStringArray(val: unknown): string[] {
   if (!Array.isArray(val)) return [];
   return val.map(String);
+}
+
+function buildClassifierUserPrompt(article: ArticleToClassify): string {
+  return `Title: ${article.title}\n\n${article.text}`;
+}
+
+function buildJsonCandidates(raw: string): string[] {
+  const cleaned = stripMarkdownFences(raw);
+  const candidates = new Set<string>();
+
+  pushCandidate(candidates, cleaned);
+  pushCandidate(candidates, cleanupJsonLikeText(cleaned));
+
+  const extractedObject = extractJSONObject(cleaned);
+  if (extractedObject) {
+    pushCandidate(candidates, extractedObject);
+    pushCandidate(candidates, cleanupJsonLikeText(extractedObject));
+  }
+
+  return [...candidates];
+}
+
+function stripMarkdownFences(raw: string): string {
+  return raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function cleanupJsonLikeText(value: string): string {
+  return value
+    .replace(/,\s*([}\]])/g, '$1')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+}
+
+function extractJSONObject(value: string): string | null {
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return value.slice(start, end + 1).trim();
+}
+
+function pushCandidate(target: Set<string>, candidate: string | null): void {
+  if (!candidate) return;
+  const trimmed = candidate.trim();
+  if (!trimmed) return;
+  target.add(trimmed);
 }
 
 function sleep(ms: number): Promise<void> {

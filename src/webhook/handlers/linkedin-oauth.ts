@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '../../utils/logger.js';
 import { LinkedInClient } from '../../linkedin/client.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sealTenantSecrets } from '../../security/tenant-secrets.js';
 
 const LINKEDIN_AUTH_URL = 'https://www.linkedin.com/oauth/v2/authorization';
 const LINKEDIN_TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken';
@@ -114,13 +115,36 @@ export async function handleLinkedInCallback(
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=linkedin_profile_failed` };
   }
 
+  const { data: tenant, error: tenantError } = await db
+    .from('tenants')
+    .select('encrypted_dek')
+    .eq('github_installation_id', installationId)
+    .single();
+
+  if (tenantError || !tenant) {
+    logger.error('linkedin.callback.tenant_fetch_failed', { installationId, error: tenantError?.message ?? 'no data' });
+    return { status: 302, location: `/onboard?installation_id=${installationId}&error=save_failed` };
+  }
+
+  let sealed;
+  try {
+    sealed = await sealTenantSecrets(
+      { linkedinAccessToken: tokenData.access_token },
+      (tenant as { encrypted_dek: string | null }).encrypted_dek,
+    );
+  } catch (err) {
+    logger.error('linkedin.callback.token_encrypt_failed', { installationId, error: String(err) });
+    return { status: 302, location: `/onboard?installation_id=${installationId}&error=save_failed` };
+  }
+
   // Store in tenant
   const { error } = await db
     .from('tenants')
     .update({
-      linkedin_access_token: tokenData.access_token,
+      linkedin_access_token: sealed.linkedinAccessToken ?? null,
       linkedin_member_id: memberUrn,
       linkedin_token_expires_at: expiresAt,
+      encrypted_dek: sealed.encryptedDek,
     })
     .eq('github_installation_id', installationId);
 

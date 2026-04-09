@@ -31,6 +31,13 @@ export class SupabaseStorage implements IVoiceStorage {
         top_finding: input.top_finding ?? null,
         top_module_id: input.top_module_id ?? null,
         findings_count: input.findings_count ?? 0,
+        author_login: input.author_login ?? null,
+        context_status: input.context_status ?? null,
+        has_industry_context: input.has_industry_context ?? false,
+        matched_article_id: input.matched_article_id ?? null,
+        matched_source_id: input.matched_source_id ?? null,
+        match_strength: input.match_strength ?? null,
+        match_connection: input.match_connection ?? null,
         status: 'pending' satisfies PostStatus,
         tenant_id: this.tenantId,
       })
@@ -50,6 +57,7 @@ export class SupabaseStorage implements IVoiceStorage {
         published_at: input.published_at,
         status: 'published' satisfies PostStatus,
         ...(input.linkedin_urn !== undefined && { linkedin_urn: input.linkedin_urn }),
+        ...(input.publish_source !== undefined && { publish_source: input.publish_source }),
       })
       .eq('id', input.id);
 

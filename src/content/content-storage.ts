@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger.js';
-import type { ContentItem } from './types.js';
+import type { ContentSource } from './types.js';
 
 export interface ArticleToStore {
   readonly sourceId: string;
@@ -12,6 +12,7 @@ export interface ArticleToStore {
   readonly mainThesis: string;
   readonly keyInsights: string[];
   readonly techConcepts: string[];
+  readonly seedModules?: string[] | null;
   readonly qualityScore: number;
   readonly titleHash: string;
   readonly fingerprint: string;
@@ -44,6 +45,7 @@ export async function storeArticle(
       main_thesis: article.mainThesis,
       key_insights: article.keyInsights,
       tech_concepts: article.techConcepts,
+      seed_modules: article.seedModules ?? null,
       quality_score: article.qualityScore,
       title_hash: article.titleHash,
       fingerprint: article.fingerprint,
@@ -185,17 +187,18 @@ export async function updateSourceStats(
 }
 
 /**
- * Returns all active sources (status IN active, probation).
- * Also returns unreachable sources for retry attempt.
+ * Returns fetchable sources for the weekly pipeline.
+ * Protected sources are static corpus anchors and are never re-fetched.
  */
-export async function loadActiveSources(db: SupabaseClient): Promise<ContentItem[]> {
+export async function loadActiveSources(db: SupabaseClient): Promise<ContentSource[]> {
   const { data, error } = await db
     .from('content_sources')
     .select('*')
-    .in('status', ['active', 'probation', 'unreachable']);
+    .in('status', ['active', 'probation', 'unreachable'])
+    .eq('is_protected', false);
 
   if (error) throw new Error(`Failed to load active sources: ${error.message}`);
-  return (data ?? []) as ContentItem[];
+  return (data ?? []) as ContentSource[];
 }
 
 /**

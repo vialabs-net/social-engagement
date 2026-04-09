@@ -1,10 +1,12 @@
 import { logger } from '../../utils/logger.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sealTenantSecrets } from '../../security/tenant-secrets.js';
 
 interface TenantRow {
   readonly id: string;
   readonly github_username: string;
   readonly buffer_access_token: string | null;
+  readonly encrypted_dek: string | null;
   readonly linkedin_member_id: string | null;
   readonly config: Record<string, unknown>;
   readonly voice_bootstrap: string | null;
@@ -12,7 +14,7 @@ interface TenantRow {
 
 function maskToken(token: string | null): string {
   if (!token) return '';
-  return token.slice(0, 6) + '••••••••';
+  return 'configured••••••••';
 }
 
 function html(tenant: TenantRow, installationId: number, linkedinClientId: string, appBaseUrl: string, saved: boolean): string {
@@ -138,7 +140,7 @@ export async function handleOnboardGet(
 ): Promise<{ status: number; body: string; contentType: string }> {
   const { data, error } = await db
     .from('tenants')
-    .select('id, github_username, buffer_access_token, linkedin_member_id, config, voice_bootstrap')
+    .select('id, github_username, buffer_access_token, encrypted_dek, linkedin_member_id, config, voice_bootstrap')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -180,7 +182,7 @@ export async function handleOnboardPost(
   // Fetch current tenant to merge config
   const { data: tenant, error: fetchError } = await db
     .from('tenants')
-    .select('id, config')
+    .select('id, config, encrypted_dek')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -207,7 +209,17 @@ export async function handleOnboardPost(
 
   // Only update buffer_access_token if a new one was provided (not the masked placeholder)
   if (bufferToken && !bufferToken.includes('••')) {
-    updates['buffer_access_token'] = bufferToken;
+    try {
+      const sealed = await sealTenantSecrets(
+        { bufferAccessToken: bufferToken },
+        (tenant as { encrypted_dek: string | null }).encrypted_dek,
+      );
+      updates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
+      updates['encrypted_dek'] = sealed.encryptedDek;
+    } catch (err) {
+      logger.error('onboard.buffer_token_encrypt_failed', { installationId, error: String(err) });
+      return { status: 302, location: `/onboard?installation_id=${installationId}&error=save_failed` };
+    }
   }
 
   // Save voice bootstrap if provided

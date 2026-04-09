@@ -38,6 +38,13 @@ ai:
   model: "claude-sonnet-4-6"
   max_tokens: 1600
 
+content:
+  extraction:
+    puppeteer_fallback_hosts:             # optional; can also use CONTENT_PUPPETEER_FALLBACK_HOSTS env var
+      - "discord.com"
+      - "stripe.com"
+      - "www.linkedin.com"
+
 # Optional: npm packages that extend devcast with custom analysis modules.
 # Each package must export a named `module` implementing CodeAnalyzer (devcast-sdk).
 # Install them first: npm install devcast-module-rust

@@ -1,5 +1,7 @@
 export type Platform = 'linkedin' | 'instagram';
 export type PostStatus = 'pending' | 'scheduled' | 'published' | 'queued';
+export type ContextStatus = 'skipped' | 'no_match' | 'matched';
+export type PublishSource = 'buffer' | 'linkedin_direct';
 
 export interface VoicePost {
   id: string;
@@ -15,10 +17,21 @@ export interface VoicePost {
   scheduled_at: string | null;
   status: PostStatus;
   top_finding: string | null;
+  top_module_id: string | null;
   findings_count: number;
+  author_login: string | null;
+  edit_analysis: Record<string, unknown> | null;
+  context_status: ContextStatus | null;
+  has_industry_context: boolean;
+  matched_article_id: string | null;
+  matched_source_id: string | null;
+  match_strength: number | null;
+  match_connection: string | null;
   linkedin_urn: string | null;
   reactions_count: number;
+  last_reactions_fetch_at: string | null;
   engagement_score: number | null;
+  publish_source: PublishSource | null;
 }
 
 export interface SaveDraftInput {
@@ -29,6 +42,13 @@ export interface SaveDraftInput {
   top_finding?: string;
   top_module_id?: string;
   findings_count?: number;
+  author_login?: string | null;
+  context_status?: ContextStatus | null;
+  has_industry_context?: boolean;
+  matched_article_id?: string | null;
+  matched_source_id?: string | null;
+  match_strength?: number | null;
+  match_connection?: string | null;
 }
 
 export interface UpdatePublishedInput {
@@ -37,6 +57,7 @@ export interface UpdatePublishedInput {
   edit_ratio: number;
   published_at: string;
   linkedin_urn?: string;  // extracted from Buffer externalLink when available
+  publish_source?: PublishSource;
 }
 
 export interface UpdateScheduledInput {

@@ -16,6 +16,8 @@ import { getInstallationToken } from './github-app-auth.js';
 import { logger } from '../utils/logger.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config } from '../config/schema.js';
+import type { SaveDraftInput } from '../voice/storage.js';
+import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 
 interface TenantRow {
   readonly id: string;
@@ -23,6 +25,7 @@ interface TenantRow {
   readonly github_username: string;
   readonly buffer_access_token: string | null;
   readonly linkedin_access_token: string | null;
+  readonly encrypted_dek: string | null;
   readonly linkedin_member_id: string | null;
   readonly config: Record<string, unknown>;
 }
@@ -99,7 +102,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 
   const { data: tenantData, error: tenantError } = await deps.db
     .from('tenants')
-    .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, linkedin_member_id, config')
+    .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, encrypted_dek, linkedin_member_id, config')
     .eq('id', job.tenant_id)
     .eq('active', true)
     .single();
@@ -109,6 +112,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   }
   const tenant = tenantData as TenantRow;
   const config = buildConfig(tenant);
+  const secrets = await resolveTenantSecrets(tenant);
 
   logger.info('worker.job.tenant', {
     jobId,
@@ -195,30 +199,64 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       // Content matching — inject industry context when a strong match is found.
       // Graceful degradation: any failure skips context, post generated normally.
       let industryContext: string | undefined;
+      let draftMetadata: Partial<SaveDraftInput> = {
+        author_login: commit.authorLogin,
+      };
       if (embedder) {
         try {
           const match = await matchFindingsToArticles(findings, embedder, anthropic, deps.db);
           if (match) {
             industryContext = `Connection: ${match.connection}`;
+            draftMetadata = {
+              ...draftMetadata,
+              context_status: 'matched',
+              has_industry_context: true,
+              matched_article_id: match.articleId,
+              matched_source_id: match.sourceId,
+              match_strength: match.matchStrength,
+              match_connection: match.connection,
+            };
             logger.info('content.match.injected', { sha: commit.sha, article: match.articleTitle });
+          } else {
+            draftMetadata = {
+              ...draftMetadata,
+              context_status: 'no_match',
+              has_industry_context: false,
+              matched_article_id: null,
+              matched_source_id: null,
+              match_strength: null,
+              match_connection: null,
+            };
           }
         } catch (err) {
           logger.warn('content.match.skipped', { sha: commit.sha, error: String(err) });
         }
+      } else {
+        logger.info('content.match.skipped', { sha: commit.sha, reason: 'no_embedder' });
       }
 
-      const { linkedinPost, bufferText, draftId } = await generatePosts(anthropic, commit, findings, storage, config, recentModuleIds, industryContext);
+      const { linkedinPost, bufferText, draftId } = await generatePosts(
+        anthropic,
+        commit,
+        findings,
+        storage,
+        config,
+        recentModuleIds,
+        industryContext,
+        draftMetadata,
+      );
 
       // Post directly to LinkedIn if connected
-      if (tenant.linkedin_access_token && tenant.linkedin_member_id) {
+      if (secrets.linkedinAccessToken && tenant.linkedin_member_id) {
         try {
-          const linkedinClient = new LinkedInClient(tenant.linkedin_access_token);
+          const linkedinClient = new LinkedInClient(secrets.linkedinAccessToken);
           await linkedinClient.post(tenant.linkedin_member_id, linkedinPost);
           await storage.updatePublished({
             id: draftId,
             published: linkedinPost,
             edit_ratio: 1.0,
             published_at: new Date().toISOString(),
+            publish_source: 'linkedin_direct',
           });
           logger.info('worker.commit.linkedin_posted', { sha: commit.sha });
         } catch (err) {
@@ -233,8 +271,8 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       }
 
       // Create Buffer Idea if configured (for Instagram or as backup)
-      if (tenant.buffer_access_token) {
-        const bufferClient = new BufferClient(tenant.buffer_access_token);
+      if (secrets.bufferAccessToken) {
+        const bufferClient = new BufferClient(secrets.bufferAccessToken);
         const publishResult = await publishToBuffer(
           bufferClient, storage, config, draftId, bufferText, commit.message,
         );
