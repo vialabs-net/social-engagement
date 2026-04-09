@@ -1,15 +1,5 @@
 [
   {
-    "id": "11",
-    "url": "https://www.linkedin.com/blog/engineering/generative-ai/behind-the-platform-the-journey-to-create-the-linkedin-genai-application-tech-stack",
-    "reason": "extractor_returned_null"
-  },
-  {
-    "id": "12",
-    "url": "https://www.uber.com/blog/from-static-rate-limiting-to-intelligent-load-management/",
-    "reason": "extractor_returned_null"
-  },
-  {
     "id": "13",
     "url": "https://www.uber.com/blog/how-uber-serves-over-150-million-reads/",
     "reason": "extractor_returned_null"
@@ -17,21 +7,6 @@
   {
     "id": "14",
     "url": "https://www.uber.com/blog/ureview/",
-    "reason": "extractor_returned_null"
-  },
-  {
-    "id": "15",
-    "url": "https://www.uber.com/blog/perfinsights/",
-    "reason": "extractor_returned_null"
-  },
-  {
-    "id": "26",
-    "url": "https://www.linkedin.com/blog/engineering/infrastructure/journey-of-next-generation-control-plane-for-data-systems",
-    "reason": "extractor_returned_null"
-  },
-  {
-    "id": "39",
-    "url": "https://www.uber.com/blog/automating-efficiency-of-go-programs-with-pgo/",
     "reason": "extractor_returned_null"
   }
 ]
