@@ -17,6 +17,7 @@
     "seed-corpus:extract": "tsx --env-file=.env.local scripts/seed-corpus/extract-text.ts",
     "seed-corpus:validate": "tsx --env-file=.env.local scripts/seed-corpus/validate.ts",
     "seed-corpus:seed": "tsx --env-file=.env.local scripts/seed-corpus/seed.ts",
+    "rotate-tenant-tokens": "tsx --env-file=.env.local scripts/rotate-tenant-tokens.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -24,6 +25,7 @@
     "@anthropic-ai/sdk": "^0.36.3",
     "@extractus/article-extractor": "^8.0.20",
     "@extractus/feed-extractor": "^7.1.7",
+    "@google-cloud/kms": "^5.4.0",
     "@octokit/rest": "^21.0.2",
     "@supabase/supabase-js": "^2.47.10",
     "better-sqlite3": "^11.7.0",

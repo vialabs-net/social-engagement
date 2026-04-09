@@ -17,6 +17,7 @@ import { logger } from '../utils/logger.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config } from '../config/schema.js';
 import type { SaveDraftInput } from '../voice/storage.js';
+import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 
 interface TenantRow {
   readonly id: string;
@@ -24,6 +25,7 @@ interface TenantRow {
   readonly github_username: string;
   readonly buffer_access_token: string | null;
   readonly linkedin_access_token: string | null;
+  readonly encrypted_dek: string | null;
   readonly linkedin_member_id: string | null;
   readonly config: Record<string, unknown>;
 }
@@ -100,7 +102,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 
   const { data: tenantData, error: tenantError } = await deps.db
     .from('tenants')
-    .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, linkedin_member_id, config')
+    .select('id, github_installation_id, github_username, buffer_access_token, linkedin_access_token, encrypted_dek, linkedin_member_id, config')
     .eq('id', job.tenant_id)
     .eq('active', true)
     .single();
@@ -110,6 +112,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   }
   const tenant = tenantData as TenantRow;
   const config = buildConfig(tenant);
+  const secrets = await resolveTenantSecrets(tenant);
 
   logger.info('worker.job.tenant', {
     jobId,
@@ -244,9 +247,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       );
 
       // Post directly to LinkedIn if connected
-      if (tenant.linkedin_access_token && tenant.linkedin_member_id) {
+      if (secrets.linkedinAccessToken && tenant.linkedin_member_id) {
         try {
-          const linkedinClient = new LinkedInClient(tenant.linkedin_access_token);
+          const linkedinClient = new LinkedInClient(secrets.linkedinAccessToken);
           await linkedinClient.post(tenant.linkedin_member_id, linkedinPost);
           await storage.updatePublished({
             id: draftId,
@@ -268,8 +271,8 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       }
 
       // Create Buffer Idea if configured (for Instagram or as backup)
-      if (tenant.buffer_access_token) {
-        const bufferClient = new BufferClient(tenant.buffer_access_token);
+      if (secrets.bufferAccessToken) {
+        const bufferClient = new BufferClient(secrets.bufferAccessToken);
         const publishResult = await publishToBuffer(
           bufferClient, storage, config, draftId, bufferText, commit.message,
         );

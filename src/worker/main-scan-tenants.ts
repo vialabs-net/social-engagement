@@ -14,6 +14,7 @@ import { scanSentPosts } from '../buffer/sent-scanner.js';
 import { SupabaseStorage } from '../voice/supabase-storage.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config } from '../config/schema.js';
+import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 
 const SUPABASE_URL = process.env['SUPABASE_URL'] ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '';
@@ -28,7 +29,8 @@ const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 interface TenantRow {
   readonly id: string;
   readonly github_username: string;
-  readonly buffer_access_token: string;
+  readonly buffer_access_token: string | null;
+  readonly encrypted_dek: string | null;
   readonly config: Record<string, unknown>;
 }
 
@@ -60,7 +62,7 @@ async function main(): Promise<void> {
 
   const { data: tenants, error } = await db
     .from('tenants')
-    .select('id, github_username, buffer_access_token, config')
+    .select('id, github_username, buffer_access_token, encrypted_dek, config')
     .eq('active', true)
     .not('buffer_access_token', 'is', null);
 
@@ -78,8 +80,13 @@ async function main(): Promise<void> {
   for (const tenant of rows) {
     try {
       const config = buildConfig(tenant);
+      const secrets = await resolveTenantSecrets(tenant);
       const storage = new SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, tenant.id);
-      const bufferClient = new BufferClient(tenant.buffer_access_token);
+      if (!secrets.bufferAccessToken) {
+        logger.warn('scanner.tenant.skip_missing_buffer_token', { tenantId: tenant.id, username: tenant.github_username });
+        continue;
+      }
+      const bufferClient = new BufferClient(secrets.bufferAccessToken);
 
       await scanSentPosts(bufferClient, storage, config);
       scanned++;

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted, implemented on `feat/content-intelligence` |
 | Date | 2026-04-08 |
 | Deciders | Liliana Castellanos |
 
@@ -42,7 +42,49 @@ Two options were considered:
 in the DB contract. Only the storage adapter and a decryption step in `processJob` change.
 `TenantRow` interface in `process-job.ts` is unchanged.
 
-**Not yet implemented.** Required before paid tier launch.
+**Implementation status:** The envelope encryption flow now exists in the app code:
+- new tokens are encrypted before being written from onboarding / OAuth callbacks
+- worker and scanner decrypt tokens at runtime using GCP KMS
+- a rotation script exists to re-encrypt legacy plaintext rows already stored in Supabase
+
+Rollout is still required before paid tier launch.
+
+## Why Rotation Is Required
+
+Rotation is needed because existing tenants were created before envelope encryption was added.
+Those rows already contain plaintext tokens in:
+
+- `tenants.buffer_access_token`
+- `tenants.linkedin_access_token`
+
+After the new code is deployed:
+- new or reconnected tenants will be stored encrypted automatically
+- old tenants would continue working temporarily only because the runtime keeps a legacy
+  fallback for plaintext rows during rollout
+
+That fallback is deliberate and temporary. Rotation is what removes the remaining plaintext
+secrets from the database without forcing every tenant to reconnect manually.
+
+So the purpose of rotation is:
+- eliminate pre-existing plaintext tokens from Supabase
+- make the database consistent: all tenants have `encrypted_dek` + ciphertext tokens
+- let us remove the legacy plaintext fallback later with confidence
+- satisfy the "required before launch" security requirement in the master spec
+
+## Rollout Shape
+
+Safe rollout order:
+
+1. Apply the DB migration that adds `tenants.encrypted_dek`
+2. Create the KMS key and grant runtime IAM permissions
+3. Deploy the new code with `GCP_KMS_KEY_NAME`
+4. Run the rotation script against existing tenants
+5. Smoke-test publish + scanner with a real tenant
+
+This order avoids downtime:
+- pre-rotation tenants still work because the runtime tolerates plaintext rows
+- post-deploy writes are encrypted immediately
+- rotation backfills the rest in place
 
 ## Consequences
 
@@ -62,3 +104,12 @@ in the DB contract. Only the storage adapter and a decryption step in `processJo
   a key deletion policy (30-day scheduled deletion minimum in GCP KMS).
 - `encrypted_dek` is a new column in `tenants` — requires a migration that also
   re-encrypts any existing plaintext tokens during rollout.
+
+## Operational Notes
+
+- The runtime expects `GCP_KMS_KEY_NAME` (or legacy alias `KMS_KEY_NAME`) to contain the full
+  crypto key resource name, for example:
+  `projects/<project>/locations/<location>/keyRings/<keyring>/cryptoKeys/<key>`
+- The local rotation script uses the same env var and Google Application Default Credentials.
+- Rotation should be run first with `--dry-run`, then without it once the candidate set looks
+  correct.
