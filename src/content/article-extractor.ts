@@ -5,15 +5,23 @@ import { logger } from '../utils/logger.js';
 import type { ArticleText } from './types.js';
 
 const EXTRACT_TIMEOUT_MS = 30_000;
+const EXTRACT_RETRY_DELAY_MS = 1_500;
 const PUPPETEER_LAUNCH_TIMEOUT_MS = 20_000;
 const PUPPETEER_TOTAL_TIMEOUT_MS = 45_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
 const MIN_WORD_COUNT_RESULT = 100;   // below this = extraction failed
 const MIN_WORD_COUNT_ACCEPT = 300;   // below this = use Puppeteer fallback for curated
-const USER_AGENT = 'devcast/1.0 (+https://devcast.lilicurl.com)';
+const BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 const DEFAULT_PUPPETEER_FALLBACK_HOSTS = [
   'discord.com',
   'stripe.com',
+  'www.linkedin.com',
 ] as const;
+
+interface UrlRequestProfile {
+  readonly name: string;
+  readonly headers: Record<string, string>;
+}
 
 interface ExtractionPolicy {
   readonly puppeteerFallbackHosts: Set<string>;
@@ -114,29 +122,52 @@ function parseRssText(raw: string): ArticleText | null {
 }
 
 async function extractFromUrl(url: string): Promise<ArticleText | null> {
-  try {
-    const signal = AbortSignal.timeout(EXTRACT_TIMEOUT_MS);
-    const article = await extract(url, {}, { signal, headers: { 'User-Agent': USER_AGENT } });
-    if (!article?.content) return null;
+  const host = getHostname(url);
+  const requestProfiles = getUrlRequestProfiles(url);
 
-    const text = stripHtml(article.content);
-    const wordCount = countWords(text);
-    if (wordCount < MIN_WORD_COUNT_RESULT) return null;
+  for (let index = 0; index < requestProfiles.length; index++) {
+    const profile = requestProfiles[index]!;
 
-    return {
-      title: article.title ?? '',
-      text,
-      wordCount,
-      publishedAt: article.published ? new Date(article.published) : null,
-    };
-  } catch (err) {
-    logger.debug('content.extract.url.fail', {
-      url,
-      host: getHostname(url),
-      error: String(err),
-    });
-    return null;
+    try {
+      if (index > 0) {
+        await sleep(EXTRACT_RETRY_DELAY_MS);
+      }
+
+      const signal = AbortSignal.timeout(EXTRACT_TIMEOUT_MS);
+      const article = await extract(url, {}, { signal, headers: profile.headers });
+      if (!article?.content) return null;
+
+      const text = stripHtml(article.content);
+      const wordCount = countWords(text);
+      if (wordCount < MIN_WORD_COUNT_RESULT) return null;
+
+      return {
+        title: article.title ?? '',
+        text,
+        wordCount,
+        publishedAt: article.published ? new Date(article.published) : null,
+      };
+    } catch (err) {
+      logger.debug('content.extract.url.fail', {
+        url,
+        host,
+        profile: profile.name,
+        error: String(err),
+      });
+
+      if (index < requestProfiles.length - 1) {
+        logger.info('content.extract.url.retry', {
+          url,
+          host,
+          fromProfile: profile.name,
+          toProfile: requestProfiles[index + 1]!.name,
+        });
+        continue;
+      }
+    }
   }
+
+  return null;
 }
 
 async function extractWithPuppeteer(url: string): Promise<ArticleText | null> {
@@ -147,6 +178,7 @@ async function extractWithPuppeteer(url: string): Promise<ArticleText | null> {
       setDefaultNavigationTimeout(timeout: number): void;
       setDefaultTimeout(timeout: number): void;
       setUserAgent(userAgent: string): Promise<void>;
+      setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
       goto(url: string, options: { waitUntil: 'domcontentloaded'; timeout: number }): Promise<unknown>;
       waitForSelector(selector: string, options: { timeout: number }): Promise<unknown>;
       waitForNetworkIdle(options: { idleTime: number; timeout: number }): Promise<unknown>;
@@ -172,11 +204,11 @@ async function extractWithPuppeteer(url: string): Promise<ArticleText | null> {
         });
 
         const page = await browser.newPage();
+        const headers = getBaseBrowserHeaders();
         page.setDefaultNavigationTimeout(EXTRACT_TIMEOUT_MS);
         page.setDefaultTimeout(EXTRACT_TIMEOUT_MS);
-        await page.setUserAgent(
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        );
+        await page.setUserAgent(BROWSER_USER_AGENT);
+        await page.setExtraHTTPHeaders(withoutUserAgentHeader(getHostSpecificBrowserHeaders(url, headers)));
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: EXTRACT_TIMEOUT_MS });
         await page.waitForSelector('body', { timeout: 5_000 }).catch(() => undefined);
         await page.waitForNetworkIdle({ idleTime: 750, timeout: 5_000 }).catch(() => undefined);
@@ -208,9 +240,7 @@ async function extractWithPuppeteer(url: string): Promise<ArticleText | null> {
     logger.warn('content.extract.puppeteer.fail', { url, error: String(err) });
     return null;
   } finally {
-    if (!skipBrowserClose) {
-      await browser?.close();
-    }
+    await closeBrowserSafely(browser, skipBrowserClose, url);
   }
 }
 
@@ -248,6 +278,20 @@ export function stripHtml(html: string): string {
 
 export function countWords(text: string): number {
   return text.split(/\s+/).filter((w) => w.length > 0).length;
+}
+
+function getUrlRequestProfiles(url: string): UrlRequestProfile[] {
+  const baseHeaders = getBaseBrowserHeaders();
+  const hostHeaders = getHostSpecificBrowserHeaders(url, baseHeaders);
+
+  if (headersEqual(baseHeaders, hostHeaders)) {
+    return [{ name: 'browser-default', headers: baseHeaders }];
+  }
+
+  return [
+    { name: 'browser-default', headers: baseHeaders },
+    { name: 'host-browser', headers: hostHeaders },
+  ];
 }
 
 function shouldUsePuppeteerFallback(url: string, policy: ExtractionPolicy): boolean {
@@ -321,4 +365,80 @@ function getHostname(url: string): string {
   } catch {
     return 'invalid-url';
   }
+}
+
+function getBaseBrowserHeaders(): Record<string, string> {
+  return {
+    'User-Agent': BROWSER_USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Upgrade-Insecure-Requests': '1',
+  };
+}
+
+function getHostSpecificBrowserHeaders(
+  url: string,
+  baseHeaders: Record<string, string>,
+): Record<string, string> {
+  const host = getHostname(url);
+
+  if (host === 'www.linkedin.com' || host === 'linkedin.com') {
+    return {
+      ...baseHeaders,
+      'Origin': 'https://www.linkedin.com',
+      'Referer': 'https://www.linkedin.com/',
+    };
+  }
+
+  if (host === 'www.uber.com' || host === 'uber.com') {
+    return {
+      ...baseHeaders,
+      'Origin': 'https://www.uber.com',
+      'Referer': 'https://www.uber.com/',
+    };
+  }
+
+  return baseHeaders;
+}
+
+function withoutUserAgentHeader(headers: Record<string, string>): Record<string, string> {
+  const clone = { ...headers };
+  delete clone['User-Agent'];
+  return clone;
+}
+
+function headersEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) return false;
+  return leftEntries.every(([key, value]) => right[key] === value);
+}
+
+async function closeBrowserSafely(
+  browser: {
+    close(): Promise<void>;
+    process(): { kill(signal?: NodeJS.Signals | number): boolean } | null;
+  } | undefined,
+  skipBrowserClose: boolean,
+  url: string,
+): Promise<void> {
+  if (!browser || skipBrowserClose) return;
+
+  try {
+    await withTimeout(browser.close(), BROWSER_CLOSE_TIMEOUT_MS, () => {
+      browser.process()?.kill('SIGKILL');
+    });
+  } catch (err) {
+    logger.debug('content.extract.puppeteer.close_fail', {
+      url,
+      error: String(err),
+    });
+    browser.process()?.kill('SIGKILL');
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

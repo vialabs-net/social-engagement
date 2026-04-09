@@ -43,6 +43,7 @@ content:
     puppeteer_fallback_hosts:             # optional; can also use CONTENT_PUPPETEER_FALLBACK_HOSTS env var
       - "discord.com"
       - "stripe.com"
+      - "www.linkedin.com"
 
 # Optional: npm packages that extend devcast with custom analysis modules.
 # Each package must export a named `module` implementing CodeAnalyzer (devcast-sdk).
