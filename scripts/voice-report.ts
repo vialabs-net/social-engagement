@@ -2,7 +2,7 @@
  * voice-report.ts
  *
  * Generates a Markdown voice report and prints it to stdout.
- * Used by voice-report.yml to push to the GitHub Wiki.
+ * Kept as a manual diagnostic utility; there is no scheduled workflow for it.
  *
  * Usage:
  *   tsx --env-file=.env.local scripts/voice-report.ts > /tmp/voice-report.md

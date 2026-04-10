@@ -1,5 +1,5 @@
 /**
- * main-scan.ts — runs on the scan-sent-posts cron (every 2h)
+ * main-scan.ts — legacy single-tenant scanner kept for manual/local debugging
  *
  * Flow: Buffer "sent" API → match buffer_post_id → computeEditRatio → voice history
  */

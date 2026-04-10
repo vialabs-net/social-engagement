@@ -159,6 +159,5 @@ After deploy, verify:
 
 ## Notes
 
-- The legacy polling workflows are still present for manual/debug use, but production uses webhook + worker + scanner.
 - The seed corpus from Phase 2 must be present before expecting stable industry-context matches.
 - `OPENAI_API_KEY` must be present in runtime and CI/CD, not only locally.
