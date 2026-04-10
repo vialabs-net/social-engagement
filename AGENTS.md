@@ -22,8 +22,8 @@ posts using Claude AI, and publishes them to LinkedIn (direct) and Buffer (Ideas
 npm install                          # install dependencies
 npm run typecheck                    # tsc --noEmit (strict mode, no any)
 npm test                             # vitest run (no test files yet)
-npm run poll                         # run poll-and-generate pipeline locally (needs TENANT_ID)
-npm run scan                         # run sent-post scanner locally (needs TENANT_ID)
+npm run poll                         # run the legacy single-tenant poll pipeline locally (needs TENANT_ID)
+npm run scan                         # run the multi-tenant sent-post scanner locally (needs TENANT_ID)
 npm run setup-buffer                 # verify Buffer token + print org/profile ID instructions
 npm run bootstrap                    # seed voice history from voice-bootstrap.md (needs TENANT_ID)
 npm run test-analyze                 # run analysis pipeline on a commit SHA (no publish)
@@ -226,10 +226,10 @@ idx_job_queue_pending           — fast job claiming
 devcast/
 ├── .github/workflows/
 │   ├── deploy.yml                  # CI/CD: push to trunk → deploy webhook + worker + scanner
-│   ├── poll-and-generate.yml       # DISABLED — replaced by webhook + worker
-│   ├── scan-sent-posts.yml         # DISABLED — replaced by multi-tenant scanner
-│   ├── bootstrap-voice.yml         # manual: seed voice history
-│   └── voice-report.yml            # weekly voice training report
+│   ├── discover-sources.yml        # scheduled + manual content source discovery
+│   ├── content-fetch.yml           # scheduled + manual content pipeline
+│   ├── content-cleanup.yml         # scheduled + manual cleanup + lifecycle
+│   └── bootstrap-voice.yml         # manual: store bootstrap exposure
 ├── src/
 │   ├── analysis/                   # 24 analysis modules
 │   │   ├── types.ts                # CodeAnalyzer, Finding, AnalysisContext

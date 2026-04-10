@@ -1,5 +1,5 @@
 /**
- * main-poll.ts — runs on the poll-and-generate cron (every 4h)
+ * main-poll.ts — legacy single-tenant poll pipeline kept for manual/local debugging
  *
  * Flow: GitHub Events → filter → enrich → modules → Claude → Buffer
  */
