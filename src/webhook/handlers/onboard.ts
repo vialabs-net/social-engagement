@@ -8,6 +8,7 @@ import { mergeVoiceProfile } from '../../voice/profile-utils.js';
 interface TenantRow {
   readonly id: string;
   readonly github_username: string;
+  readonly active: boolean;
   readonly buffer_access_token: string | null;
   readonly encrypted_dek: string | null;
   readonly linkedin_member_id: string | null;
@@ -278,7 +279,7 @@ export async function handleOnboardGet(
 ): Promise<{ status: number; body: string; contentType: string }> {
   const { data, error } = await db
     .from('tenants')
-    .select('id, github_username, buffer_access_token, encrypted_dek, linkedin_member_id, config, voice_bootstrap')
+    .select('id, github_username, active, buffer_access_token, encrypted_dek, linkedin_member_id, config, voice_bootstrap')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -292,11 +293,27 @@ export async function handleOnboardGet(
   }
 
   const tenant = data as TenantRow;
+  if (!tenant.active) {
+    const { error: activateError } = await db
+      .from('tenants')
+      .update({ active: true })
+      .eq('github_installation_id', installationId);
+
+    if (activateError) {
+      logger.error('onboard.tenant_reactivate_failed', { installationId, error: activateError.message });
+      return {
+        status: 500,
+        body: '<h1>Internal error</h1><p>Failed to reactivate installation.</p>',
+        contentType: 'text/html',
+      };
+    }
+  }
+
   const voiceProfile = await loadDefaultVoiceProfile(db, tenant.id);
 
   return {
     status: 200,
-    body: html(tenant, installationId, voiceProfile, saved),
+    body: html({ ...tenant, active: true }, installationId, voiceProfile, saved),
     contentType: 'text/html',
   };
 }
@@ -351,6 +368,7 @@ export async function handleOnboardPost(
   const updates: Record<string, unknown> = {
     config: updatedConfig,
     voice_bootstrap: voiceBootstrap,
+    active: true,
   };
 
   if (bufferToken && !bufferToken.includes('••')) {

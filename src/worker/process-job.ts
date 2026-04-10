@@ -61,6 +61,10 @@ export interface ProcessJobDeps {
 function buildConfig(tenant: TenantRow): Config {
   const tc = tenant.config;
   const result = ConfigSchema.safeParse({
+    github: { exclude_repos: [], exclude_patterns: [] },
+    scheduling: {},
+    posting: {},
+    ai: {},
     buffer: { organization_id: 'UNCONFIGURED' },
     platforms: {
       linkedin: { enabled: true, buffer_profile_id: '' },
