@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { DEFAULT_VOICE_PROFILE, VoiceProfileSchema, type VoiceProfile } from '../config/schema.js';
 import type {
   IVoiceStorage,
   VoicePost,
@@ -11,8 +12,56 @@ import type {
   UpdateEngagementInput,
   Platform,
   PostStatus,
+  RecentTopFinding,
   SlottedPost,
+  StoredVoiceProfile,
 } from './storage.js';
+
+interface SqliteVoiceProfileRow {
+  id: string;
+  github_author_login: string | null;
+  voice: string;
+  version: number;
+}
+
+type SqliteVoicePostRow = Omit<VoicePost, 'edit_analysis' | 'has_industry_context'> & {
+  edit_analysis: string | null;
+  has_industry_context: number;
+};
+
+function normalizeVoiceProfile(candidate: unknown): VoiceProfile | null {
+  const parsed = VoiceProfileSchema.safeParse(candidate);
+  if (!parsed.success) return null;
+  return {
+    ...DEFAULT_VOICE_PROFILE,
+    ...parsed.data,
+    content_strategy: {
+      ...DEFAULT_VOICE_PROFILE.content_strategy,
+      ...parsed.data.content_strategy,
+    },
+    post_length: {
+      ...DEFAULT_VOICE_PROFILE.post_length,
+      ...parsed.data.post_length,
+    },
+  };
+}
+
+function mapVoicePost(row: SqliteVoicePostRow): VoicePost {
+  let editAnalysis: Record<string, unknown> | null = null;
+  if (row.edit_analysis) {
+    try {
+      editAnalysis = JSON.parse(row.edit_analysis) as Record<string, unknown>;
+    } catch {
+      editAnalysis = null;
+    }
+  }
+
+  return {
+    ...row,
+    edit_analysis: editAnalysis,
+    has_industry_context: !!row.has_industry_context,
+  };
+}
 
 export class SqliteStorage implements IVoiceStorage {
   private readonly db: Database.Database;
@@ -57,6 +106,8 @@ export class SqliteStorage implements IVoiceStorage {
         reactions_count INTEGER NOT NULL DEFAULT 0,
         engagement_score REAL,
         publish_source  TEXT,
+        generation_system TEXT,
+        opening_move    TEXT,
         tenant_id       TEXT
       );
 
@@ -74,10 +125,30 @@ export class SqliteStorage implements IVoiceStorage {
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS match_connection     TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS last_reactions_fetch_at TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS publish_source   TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS generation_system TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS opening_move     TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS tenant_id        TEXT;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
         ON voice_posts(commit_sha, platform);
+
+      CREATE TABLE IF NOT EXISTS voice_profiles (
+        id                 TEXT PRIMARY KEY,
+        tenant_id          TEXT NOT NULL,
+        github_author_login TEXT,
+        voice              TEXT NOT NULL DEFAULT '{}',
+        version            INTEGER NOT NULL DEFAULT 1,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_profiles_tenant_default
+        ON voice_profiles(tenant_id)
+        WHERE github_author_login IS NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_profiles_tenant_author
+        ON voice_profiles(tenant_id, github_author_login)
+        WHERE github_author_login IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS scheduled_slots (
         id            TEXT PRIMARY KEY,
@@ -110,9 +181,9 @@ export class SqliteStorage implements IVoiceStorage {
       INSERT INTO voice_posts (
         id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count,
         author_login, context_status, has_industry_context, matched_article_id, matched_source_id,
-        match_strength, match_connection, status, tenant_id
+        match_strength, match_connection, generation_system, opening_move, status, tenant_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
     `).run(
       id,
       input.commit_sha,
@@ -129,9 +200,69 @@ export class SqliteStorage implements IVoiceStorage {
       input.matched_source_id ?? null,
       input.match_strength ?? null,
       input.match_connection ?? null,
+      input.generation_system ?? null,
+      input.opening_move ?? null,
       this.tenantId,
     );
     return Promise.resolve(id);
+  }
+
+  getVoiceProfile(authorLogin: string | null): Promise<StoredVoiceProfile | null> {
+    const exact = this.fetchVoiceProfileRow(authorLogin);
+    if (exact) {
+      return Promise.resolve({
+        voice: normalizeVoiceProfile(JSON.parse(exact.voice)) ?? DEFAULT_VOICE_PROFILE,
+        version: exact.version,
+      });
+    }
+
+    if (authorLogin) {
+      const fallback = this.fetchVoiceProfileRow(null);
+      if (fallback) {
+        return Promise.resolve({
+          voice: normalizeVoiceProfile(JSON.parse(fallback.voice)) ?? DEFAULT_VOICE_PROFILE,
+          version: fallback.version,
+        });
+      }
+    }
+
+    const legacy = this.loadLegacyVoiceProfile();
+    if (!legacy) return Promise.resolve(null);
+
+    return this.saveVoiceProfile(null, legacy.voice, legacy.version)
+      .then(() => legacy);
+  }
+
+  saveVoiceProfile(authorLogin: string | null, voice: VoiceProfile, expectedVersion?: number): Promise<boolean> {
+    const normalized = normalizeVoiceProfile(voice) ?? DEFAULT_VOICE_PROFILE;
+    const existing = this.fetchVoiceProfileRow(authorLogin);
+
+    if (!existing) {
+      if (expectedVersion !== undefined && expectedVersion !== 0) return Promise.resolve(false);
+
+      this.db.prepare(`
+        INSERT INTO voice_profiles (id, tenant_id, github_author_login, voice, version)
+        VALUES (?, ?, ?, ?, 1)
+      `).run(randomUUID(), this.tenantId, authorLogin, JSON.stringify(normalized));
+      return Promise.resolve(true);
+    }
+
+    if (expectedVersion !== undefined && existing.version !== expectedVersion) {
+      return Promise.resolve(false);
+    }
+
+    const result = this.db.prepare(`
+      UPDATE voice_profiles
+      SET voice = ?, version = ?, updated_at = datetime('now')
+      WHERE id = ? AND version = ?
+    `).run(
+      JSON.stringify(normalized),
+      existing.version + 1,
+      existing.id,
+      expectedVersion ?? existing.version,
+    );
+
+    return Promise.resolve(result.changes > 0);
   }
 
   getRecentModuleIds(days: number): Promise<string[]> {
@@ -148,6 +279,7 @@ export class SqliteStorage implements IVoiceStorage {
     this.db.prepare(`
       UPDATE voice_posts
       SET published = ?, edit_ratio = ?, published_at = ?, status = 'published',
+          edit_analysis = COALESCE(?, edit_analysis),
           linkedin_urn = COALESCE(?, linkedin_urn),
           publish_source = COALESCE(?, publish_source)
       WHERE id = ?
@@ -155,6 +287,7 @@ export class SqliteStorage implements IVoiceStorage {
       input.published,
       input.edit_ratio,
       input.published_at,
+      input.edit_analysis ? JSON.stringify(input.edit_analysis) : null,
       input.linkedin_urn ?? null,
       input.publish_source ?? null,
       input.id,
@@ -182,8 +315,8 @@ export class SqliteStorage implements IVoiceStorage {
       WHERE tenant_id = ? AND platform = ? AND status = 'published' AND edit_ratio IS NOT NULL
       ORDER BY engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST
       LIMIT ?
-    `).all(this.tenantId, platform, limit) as VoicePost[];
-    return Promise.resolve(rows);
+    `).all(this.tenantId, platform, limit) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
   }
 
   updateEngagement(input: UpdateEngagementInput): Promise<void> {
@@ -200,8 +333,8 @@ export class SqliteStorage implements IVoiceStorage {
       SELECT * FROM voice_posts
       WHERE tenant_id = ? AND platform = ? AND status = 'published'
         AND linkedin_urn IS NOT NULL AND engagement_score IS NULL
-    `).all(this.tenantId, platform) as VoicePost[];
-    return Promise.resolve(rows);
+    `).all(this.tenantId, platform) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
   }
 
   getRecentPublished(limit: number): Promise<VoicePost[]> {
@@ -210,8 +343,146 @@ export class SqliteStorage implements IVoiceStorage {
       WHERE tenant_id = ? AND status = 'published'
       ORDER BY published_at DESC NULLS LAST
       LIMIT ?
-    `).all(this.tenantId, limit) as VoicePost[];
+    `).all(this.tenantId, limit) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
+  }
+
+  getPublishedForAuthor(
+    authorLogin: string,
+    platform: Platform,
+    limit: number,
+    minEditRatio = 0.7,
+  ): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND platform = ?
+        AND status = 'published'
+        AND edit_ratio >= ?
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT ?
+    `).all(this.tenantId, authorLogin, platform, minEditRatio, limit) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
+  }
+
+  getPublishedForExposure(authorLogin: string, platform: Platform): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND platform = ?
+        AND status = 'published'
+        AND published IS NOT NULL
+        AND edit_ratio >= 0.3
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT 40
+    `).all(this.tenantId, authorLogin, platform) as SqliteVoicePostRow[];
+    return Promise.resolve(dedupePublishedPrefix(rows.map(mapVoicePost)));
+  }
+
+  getPublishedForMoves(authorLogin: string): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND status = 'published'
+        AND published IS NOT NULL
+        AND edit_ratio >= 0.3
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT 30
+    `).all(this.tenantId, authorLogin) as SqliteVoicePostRow[];
+    return Promise.resolve(dedupePublishedPrefix(rows.map(mapVoicePost)));
+  }
+
+  getRecentTopFindings(authorLogin: string | null, moduleId: string, limit: number): Promise<RecentTopFinding[]> {
+    const rows = (authorLogin
+      ? this.db.prepare(`
+          SELECT top_finding, published_at
+          FROM voice_posts
+          WHERE tenant_id = ?
+            AND author_login = ?
+            AND top_module_id = ?
+            AND status = 'published'
+            AND top_finding IS NOT NULL
+          ORDER BY published_at DESC NULLS LAST
+          LIMIT ?
+        `).all(this.tenantId, authorLogin, moduleId, limit)
+      : this.db.prepare(`
+          SELECT top_finding, published_at
+          FROM voice_posts
+          WHERE tenant_id = ?
+            AND top_module_id = ?
+            AND status = 'published'
+            AND top_finding IS NOT NULL
+          ORDER BY published_at DESC NULLS LAST
+          LIMIT ?
+        `).all(this.tenantId, moduleId, limit)) as RecentTopFinding[];
     return Promise.resolve(rows);
+  }
+
+  getRecentOutcomes(authorLogin: string, limit: number): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND status IN ('published', 'expired')
+      ORDER BY COALESCE(published_at, created_at) DESC
+      LIMIT ?
+    `).all(this.tenantId, authorLogin, limit) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
+  }
+
+  countDraftsSince(authorLogin: string, sinceIso: string): Promise<number> {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND created_at >= ?
+    `).get(this.tenantId, authorLogin, sinceIso) as { count: number };
+    return Promise.resolve(row.count);
+  }
+
+  countUniquePublished(authorLogin: string, platform?: Platform): Promise<number> {
+    const rows = (platform
+      ? this.db.prepare(`
+          SELECT published
+          FROM voice_posts
+          WHERE tenant_id = ?
+            AND author_login = ?
+            AND platform = ?
+            AND status = 'published'
+            AND published IS NOT NULL
+        `).all(this.tenantId, authorLogin, platform)
+      : this.db.prepare(`
+          SELECT published
+          FROM voice_posts
+          WHERE tenant_id = ?
+            AND author_login = ?
+            AND status = 'published'
+            AND published IS NOT NULL
+        `).all(this.tenantId, authorLogin)) as Array<{ published: string | null }>;
+    return Promise.resolve(countDistinctPublishedPrefix(rows));
+  }
+
+  listActiveAuthors(days: number): Promise<string[]> {
+    const rows = this.db.prepare(`
+      SELECT DISTINCT author_login
+      FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login IS NOT NULL
+        AND (
+          created_at >= datetime('now', '-' || ? || ' days')
+          OR published_at >= datetime('now', '-' || ? || ' days')
+        )
+      UNION
+      SELECT github_author_login AS author_login
+      FROM voice_profiles
+      WHERE tenant_id = ?
+        AND github_author_login IS NOT NULL
+    `).all(this.tenantId, days, days, this.tenantId) as { author_login: string }[];
+    return Promise.resolve(rows.map((row) => row.author_login));
   }
 
   hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {
@@ -226,8 +497,8 @@ export class SqliteStorage implements IVoiceStorage {
       SELECT * FROM voice_posts
       WHERE tenant_id = ? AND platform = ? AND status = 'queued'
       ORDER BY created_at ASC
-    `).all(this.tenantId, platform) as VoicePost[];
-    return Promise.resolve(rows);
+    `).all(this.tenantId, platform) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
   }
 
   getScheduledUnpublished(platform: Platform): Promise<VoicePost[]> {
@@ -235,8 +506,19 @@ export class SqliteStorage implements IVoiceStorage {
       SELECT * FROM voice_posts
       WHERE tenant_id = ? AND platform = ? AND status = 'scheduled' AND published IS NULL
       ORDER BY created_at ASC
-    `).all(this.tenantId, platform) as VoicePost[];
-    return Promise.resolve(rows);
+    `).all(this.tenantId, platform) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
+  }
+
+  markExpired(ids: string[]): Promise<void> {
+    if (ids.length === 0) return Promise.resolve();
+    const placeholders = ids.map(() => '?').join(', ');
+    this.db.prepare(`
+      UPDATE voice_posts
+      SET status = 'expired'
+      WHERE tenant_id = ? AND id IN (${placeholders})
+    `).run(this.tenantId, ...ids);
+    return Promise.resolve();
   }
 
   claimSlot(slot: SlottedPost): Promise<boolean> {
@@ -282,4 +564,76 @@ export class SqliteStorage implements IVoiceStorage {
   close(): void {
     this.db.close();
   }
+
+  private fetchVoiceProfileRow(authorLogin: string | null): SqliteVoiceProfileRow | null {
+    const query = authorLogin === null
+      ? `
+        SELECT id, github_author_login, voice, version
+        FROM voice_profiles
+        WHERE tenant_id = ? AND github_author_login IS NULL
+        LIMIT 1
+      `
+      : `
+        SELECT id, github_author_login, voice, version
+        FROM voice_profiles
+        WHERE tenant_id = ? AND github_author_login = ?
+        LIMIT 1
+      `;
+
+    return (authorLogin === null
+      ? this.db.prepare(query).get(this.tenantId)
+      : this.db.prepare(query).get(this.tenantId, authorLogin)) as SqliteVoiceProfileRow | null;
+  }
+
+  private loadLegacyVoiceProfile(): StoredVoiceProfile | null {
+    if (!this.hasTable('tenants')) return null;
+
+    const tenant = this.db.prepare(`
+      SELECT config
+      FROM tenants
+      WHERE id = ?
+      LIMIT 1
+    `).get(this.tenantId) as { config: string | null } | undefined;
+
+    if (!tenant?.config) return null;
+
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(tenant.config) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+
+    const voice = normalizeVoiceProfile(config['voice']);
+    if (!voice) return null;
+    return { voice, version: 1 };
+  }
+
+  private hasTable(name: string): boolean {
+    const row = this.db.prepare(`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
+    `).get(name) as { name: string } | undefined;
+    return !!row;
+  }
+}
+
+function dedupePublishedPrefix(rows: VoicePost[]): VoicePost[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = (row.published ?? '').slice(0, 80);
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function countDistinctPublishedPrefix(rows: Array<{ published: string | null }>): number {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = (row.published ?? '').slice(0, 80);
+    if (!key) continue;
+    seen.add(key);
+  }
+  return seen.size;
 }
