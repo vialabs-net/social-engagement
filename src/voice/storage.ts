@@ -161,6 +161,9 @@ export interface IVoiceStorage {
   /** Get recent outcomes for one author across published/expired rows. */
   getRecentOutcomes(authorLogin: string, limit: number): Promise<VoicePost[]>;
 
+  /** Get drafts created after the provided ISO timestamp, ordered oldest-first. */
+  getDraftsSince(authorLogin: string, sinceIso: string): Promise<VoicePost[]>;
+
   /** Count drafts for one author created after the provided ISO timestamp. */
   countDraftsSince(authorLogin: string, sinceIso: string): Promise<number>;
 

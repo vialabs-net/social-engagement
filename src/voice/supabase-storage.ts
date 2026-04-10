@@ -322,6 +322,19 @@ export class SupabaseStorage implements IVoiceStorage {
     return (data ?? []) as VoicePost[];
   }
 
+  async getDraftsSince(authorLogin: string, sinceIso: string): Promise<VoicePost[]> {
+    const { data, error } = await this.db
+      .from('voice_posts')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('author_login', authorLogin)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(`getDraftsSince failed: ${error.message}`);
+    return (data ?? []) as VoicePost[];
+  }
+
   async countDraftsSince(authorLogin: string, sinceIso: string): Promise<number> {
     const { count, error } = await this.db
       .from('voice_posts')

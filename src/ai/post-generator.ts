@@ -12,6 +12,7 @@ export interface GeneratedPosts {
   shortPost: string;      // short variant for Twitter/X
   bufferText: string;     // combined text for Buffer Idea
   draftId: string;
+  openingMove: string;
 }
 
 export interface GeneratePostsOptions {
@@ -98,7 +99,7 @@ export async function generatePosts(
 
   logger.info('ai.generate.done', { sha: commit.sha, draftId });
 
-  return { linkedinPost: post, shortPost, bufferText, draftId };
+  return { linkedinPost: post, shortPost, bufferText, draftId, openingMove };
 }
 
 function parseResponse(raw: string): { post: string; shortPost: string } {

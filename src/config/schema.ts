@@ -118,6 +118,7 @@ export const ConfigSchema = z.object({
     interesting_min_lines: z.number().int().min(1).default(10),
     voice_examples_count: z.number().int().min(1).max(10).default(5),
     max_pending_drafts: z.number().int().min(1).default(10),
+    max_daily_posts_per_author: z.number().int().min(1).default(2),
     analysis_top_n: z.number().int().min(1).max(7).default(3),
   }),
   ai: z.object({

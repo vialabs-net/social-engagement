@@ -433,6 +433,17 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(rows.map(mapVoicePost));
   }
 
+  getDraftsSince(authorLogin: string, sinceIso: string): Promise<VoicePost[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM voice_posts
+      WHERE tenant_id = ?
+        AND author_login = ?
+        AND created_at >= ?
+      ORDER BY created_at ASC
+    `).all(this.tenantId, authorLogin, sinceIso) as SqliteVoicePostRow[];
+    return Promise.resolve(rows.map(mapVoicePost));
+  }
+
   countDraftsSince(authorLogin: string, sinceIso: string): Promise<number> {
     const row = this.db.prepare(`
       SELECT COUNT(*) AS count
