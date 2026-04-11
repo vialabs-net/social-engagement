@@ -20,6 +20,7 @@ import { classifyArticlesBatch } from '../classifier.js';
 import { chunkArticle } from '../chunker.js';
 import { embedChunksBatch } from '../embedder.js';
 import {
+  countSourcesByStatus,
   promoteQueuedSources,
   loadDedupData,
   storeArticle,
@@ -54,15 +55,22 @@ async function main(): Promise<void> {
     classify_json_errors: 0, embed_failures: 0,
   };
 
+  const sourceCountsBefore = await countSourcesByStatus(db);
+  stats.sources_queued = sourceCountsBefore['queued'] ?? 0;
+  stats.sources_active = (sourceCountsBefore['active'] ?? 0) + (sourceCountsBefore['active:protected'] ?? 0);
+
   // ── A. Promote queued sources ──────────────────────────────────────────────
   const promoted = await promoteQueuedSources(db, 20);
   stats.sources_promoted = promoted;
-  logger.info('content.fetch.promoted', { count: promoted });
+  logger.info('content.fetch.promoted', {
+    count: promoted,
+    queued_before: stats.sources_queued,
+    active_before: stats.sources_active,
+  });
 
   // ── B. Fetch RSS feeds ─────────────────────────────────────────────────────
   const sources = await loadActiveSources(db) as unknown as ContentSource[];
-  stats.sources_active = sources.filter((s) => s.status === 'active').length;
-  stats.sources_queued = sources.filter((s) => s.status === 'queued').length;
+  stats.sources_active = sources.filter((s) => s.status === 'active').length + (sourceCountsBefore['active:protected'] ?? 0);
 
   const feedResults = await fetchAllFeeds(sources);
 

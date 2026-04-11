@@ -10,6 +10,7 @@
     "bootstrap": "tsx --env-file=.env.local scripts/bootstrap-voice.ts",
     "voice:analyze": "tsx --env-file=.env.local scripts/analyze-voice.ts",
     "voice:validate-registry": "tsx --env-file=.env.local scripts/validate-registry.ts",
+    "audit:match": "tsx --env-file=.env.local scripts/audit-content-match.ts",
     "test-analyze": "tsx --env-file=.env.local scripts/test-analyze.ts",
     "webhook": "tsx --env-file=.env.local src/webhook/server.ts",
     "worker": "tsx --env-file=.env.local src/worker/main-worker.ts",

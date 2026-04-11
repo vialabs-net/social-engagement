@@ -6,6 +6,7 @@ interface ServiceSignature {
   category: string;
   explanation: string;
   score: number;
+  retrievalTerms?: string[];
 }
 
 // AI integrations are covered by AiAssistedModule — skip here to avoid duplicate findings
@@ -13,11 +14,20 @@ const AI_CATEGORY = 'AI / large language model';
 
 const KNOWN_SERVICES: ServiceSignature[] = [
   {
+    name: 'Google Cloud KMS',
+    patterns: [/from ['"]@google-cloud\/kms['"]|KeyManagementServiceClient\(/i],
+    category: 'cloud key management',
+    explanation: 'KMS integration moves encryption boundaries into a managed key service. The important design work is around envelope encryption, tenant isolation, key rotation, and how secrets are decrypted only at the last responsible moment.',
+    score: 9,
+    retrievalTerms: ['google cloud kms', 'envelope encryption', 'dek', 'kek', 'tenant secrets'],
+  },
+  {
     name: 'Redis',
-    patterns: [/from ['"]ioredis['"]|from ['"]redis['"]|new Redis\(|createClient\(\)/i],
+    patterns: [/from ['"]ioredis['"]|from ['"]redis['"]|new Redis\(|redis:\/\/|upstash/i],
     category: 'caching / pub-sub',
     explanation: 'Redis integration adds a fast in-memory layer between the application and the database. Key decisions: TTL strategy, fallback behavior on cache miss, and cache invalidation approach.',
     score: 9,
+    retrievalTerms: ['redis', 'cache invalidation', 'pub sub', 'ttl'],
   },
   {
     name: 'Stripe',
@@ -35,10 +45,11 @@ const KNOWN_SERVICES: ServiceSignature[] = [
   },
   {
     name: 'Supabase',
-    patterns: [/from ['"]@supabase\/supabase-js['"]|createClient\(/],
+    patterns: [/from ['"]@supabase\/supabase-js['"]|supabaseUrl|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY/i],
     category: 'database / auth / storage',
     explanation: 'Supabase integration provides a Postgres-backed backend with built-in auth and row-level security. Connection setup and query patterns matter for both security and performance.',
     score: 7,
+    retrievalTerms: ['supabase', 'postgres', 'row level security', 'tenant storage'],
   },
   {
     name: 'Prisma',
@@ -103,6 +114,7 @@ export class IntegrationModule implements CodeAnalyzer {
     for (const service of KNOWN_SERVICES) {
       if (service.category === AI_CATEGORY) continue;
       if (service.patterns.some(p => p.test(addedText))) {
+        const matchingDiff = ctx.diffs.find((diff) => service.patterns.some((pattern) => pattern.test(diff.patch)));
         return {
           moduleId: this.id,
           aspect: `${service.name} integration`,
@@ -110,7 +122,8 @@ export class IntegrationModule implements CodeAnalyzer {
           technicalDetail: `${service.name}, ${service.category}. New import/client initialization detected in the diff.`,
           plainLanguage: service.explanation,
           interestScore: service.score,
-          contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+          contextHint: `${matchingDiff?.filename ?? ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+          retrievalTerms: service.retrievalTerms,
         };
       }
     }

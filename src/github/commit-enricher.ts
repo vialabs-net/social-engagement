@@ -6,6 +6,8 @@ import type { FileDiff } from '../analysis/types.js';
 export interface EnrichedCommit {
   sha: string;
   message: string;
+  body: string;
+  fullMessage: string;
   repo: string;
   authorLogin: string;
   totalAdditions: number;
@@ -52,10 +54,14 @@ export async function enrichCommit(
 
   const diffs = parseCommitFiles(raw.files ?? []);
   const languages = detectLanguages(diffs);
+  const fullMessage = raw.commit.message ?? '';
+  const [subject, ...bodyLines] = fullMessage.split('\n');
 
   return {
     sha: raw.sha,
-    message: raw.commit.message.split('\n')[0] ?? raw.commit.message,
+    message: subject ?? fullMessage,
+    body: bodyLines.join('\n').trim(),
+    fullMessage,
     repo: `${owner}/${repo}`,
     authorLogin,
     totalAdditions: raw.stats?.additions ?? 0,

@@ -36,6 +36,7 @@ export interface FileDiff {
 export interface AnalysisContext {
   diffs: FileDiff[];
   commitMessage: string;
+  commitBody?: string;
   languages: string[];     // detected from file extensions
   repo: string;            // 'owner/repo'
   sha: string;
@@ -49,6 +50,8 @@ export interface Finding {
   plainLanguage: string;   // what Claude should explain in the post
   interestScore: number;   // 1–10
   contextHint?: string;    // e.g. "ReconciliationService.ts in vialabs-net/scrappers"
+  retrievalText?: string;  // richer retrieval-oriented text for article matching
+  retrievalTerms?: string[];
   evidence?: {
     before?: string;       // code snippet or description of before state
     after?: string;        // code snippet or description of after state

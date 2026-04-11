@@ -182,7 +182,14 @@ async function main(): Promise<void> {
       }
 
       const pipelineFindings = await runPipeline(
-        { diffs: commit.diffs, commitMessage: commit.message, languages: commit.languages, repo: commit.repo, sha: commit.sha },
+        {
+          diffs: commit.diffs,
+          commitMessage: commit.message,
+          commitBody: commit.body,
+          languages: commit.languages,
+          repo: commit.repo,
+          sha: commit.sha,
+        },
         config.posting.analysis_top_n,
         modules,
         recentModuleIds,

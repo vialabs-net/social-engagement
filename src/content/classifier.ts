@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'crypto';
 import { logger } from '../utils/logger.js';
 import type { ClassifierResult } from './types.js';
 
@@ -26,7 +27,7 @@ Respond ONLY as JSON:
 }`;
 
 export interface ArticleToClassify {
-  readonly id: string;  // used as custom_id in batch
+  readonly id: string;
   readonly title: string;
   readonly text: string;
 }
@@ -63,10 +64,15 @@ export async function classifyArticlesBatch(
     messages: [{ role: 'user', content: buildClassifierUserPrompt(article) }],
   }));
 
-  const batchRequests = articles.map((article, i) => ({
-    custom_id: article.id,
-    params: requests[i]!,
-  }));
+  const idMap = new Map<string, string>();
+  const batchRequests = articles.map((article, i) => {
+    const customId = buildBatchCustomId(article.id, i);
+    idMap.set(customId, article.id);
+    return {
+      custom_id: customId,
+      params: requests[i]!,
+    };
+  });
 
   logger.info('content.classify.batch_submit', { count: articles.length, model });
 
@@ -95,8 +101,9 @@ export async function classifyArticlesBatch(
   let jsonErrors = 0;
 
   for await (const result of await client.messages.batches.results(batch.id)) {
+    const originalId = idMap.get(result.custom_id) ?? result.custom_id;
     if (result.result.type !== 'succeeded') {
-      logger.warn('content.classify.item_failed', { id: result.custom_id, type: result.result.type });
+      logger.warn('content.classify.item_failed', { id: originalId, type: result.result.type });
       continue;
     }
 
@@ -106,11 +113,11 @@ export async function classifyArticlesBatch(
     const parsed = parseClassifierResponse(block.text);
     if (parsed) {
       if (parsed.quality_score >= QUALITY_GATE) {
-        classified.push({ id: result.custom_id, result: parsed });
+        classified.push({ id: originalId, result: parsed });
       }
     } else {
       jsonErrors++;
-      logger.warn('content.classify.json_error', { id: result.custom_id });
+      logger.warn('content.classify.json_error', { id: originalId });
     }
   }
 
@@ -203,6 +210,11 @@ function toStringArray(val: unknown): string[] {
 
 function buildClassifierUserPrompt(article: ArticleToClassify): string {
   return `Title: ${article.title}\n\n${article.text}`;
+}
+
+function buildBatchCustomId(articleId: string, index: number): string {
+  const digest = createHash('sha256').update(articleId).digest('hex').slice(0, 16);
+  return `article-${index}-${digest}`;
 }
 
 function buildJsonCandidates(raw: string): string[] {

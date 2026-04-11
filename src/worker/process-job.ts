@@ -264,6 +264,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         {
           diffs: commit.diffs,
           commitMessage: commit.message,
+          commitBody: commit.body,
           languages: commit.languages,
           repo: commit.repo,
           sha: commit.sha,

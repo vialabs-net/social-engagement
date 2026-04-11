@@ -149,7 +149,11 @@ export async function recordFetchFailure(db: SupabaseClient, sourceId: string): 
 export async function recordFetchSuccess(db: SupabaseClient, sourceId: string): Promise<void> {
   await db
     .from('content_sources')
-    .update({ fetch_failures: 0, last_fetch_ok_at: new Date().toISOString() })
+    .update({
+      fetch_failures: 0,
+      last_fetch_ok_at: new Date().toISOString(),
+      status: 'active',
+    })
     .eq('id', sourceId);
 }
 
@@ -201,6 +205,21 @@ export async function loadActiveSources(db: SupabaseClient): Promise<ContentSour
   return (data ?? []) as ContentSource[];
 }
 
+export async function countSourcesByStatus(db: SupabaseClient): Promise<Record<string, number>> {
+  const { data, error } = await db
+    .from('content_sources')
+    .select('status, is_protected');
+
+  if (error) throw new Error(`Failed to count content sources: ${error.message}`);
+
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ status: string; is_protected: boolean }>) {
+    const key = row.status + (row.is_protected ? ':protected' : '');
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /**
  * Promotes up to 20 queued sources to active.
  * Priority: discovered_from='both' first, then oldest.
@@ -208,15 +227,28 @@ export async function loadActiveSources(db: SupabaseClient): Promise<ContentSour
 export async function promoteQueuedSources(db: SupabaseClient, limit = 20): Promise<number> {
   const { data } = await db
     .from('content_sources')
-    .select('id')
+    .select('id, discovered_from, added_at')
     .eq('status', 'queued')
-    .order('discovered_from', { ascending: false })  // 'both' sorts before others alphabetically — OK
-    .order('added_at', { ascending: true })
     .limit(limit);
 
   if (!data?.length) return 0;
 
-  const ids = (data as Array<{ id: string }>).map((r) => r.id);
+  const priority = new Map<string, number>([
+    ['both', 0],
+    ['manual', 1],
+    ['engineering-blogs', 2],
+    ['awesome-tech-rss', 3],
+  ]);
+
+  const ids = [...(data as Array<{ id: string; discovered_from: string | null; added_at: string }>) ]
+    .sort((left, right) => {
+      const leftPriority = priority.get(left.discovered_from ?? '') ?? 99;
+      const rightPriority = priority.get(right.discovered_from ?? '') ?? 99;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return new Date(left.added_at).getTime() - new Date(right.added_at).getTime();
+    })
+    .slice(0, limit)
+    .map((row) => row.id);
   await db.from('content_sources').update({ status: 'active' }).in('id', ids);
   return ids.length;
 }

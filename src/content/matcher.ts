@@ -4,6 +4,7 @@ import type { IAIClient } from '../ai/types.js';
 import { logger } from '../utils/logger.js';
 
 const SIMILARITY_THRESHOLD = 0.75;
+const FALLBACK_THRESHOLDS = [0.45, 0.3, 0];
 const QUALITY_GATE = 6;
 const MATCH_WINDOW_DAYS = 30;
 const TOP_CANDIDATES = 3;
@@ -33,30 +34,43 @@ export interface MatchedContext {
 interface FindingInput {
   readonly moduleId: string;
   readonly finding: string;
+  readonly technicalDetail?: string;
   readonly plainLanguage: string;
   readonly contextHint?: string;
+  readonly retrievalText?: string;
+  readonly retrievalTerms?: string[];
 }
 
-/**
- * Stage 1 — pgvector bi-encoder search (~5ms + 1 embedding call per finding).
- *
- * Embeds finding.plainLanguage, searches article_chunks by cosine similarity,
- * deduplicates by article (keep best chunk per article), returns top 3 candidates.
- */
-async function stage1BiEncoder(
-  finding: FindingInput,
-  embedder: IEmbedder,
+interface Stage1Result {
+  readonly candidates: CandidateArticle[];
+  readonly thresholdUsed: number;
+  readonly queryText: string;
+}
+
+function buildRetrievalQuery(finding: FindingInput): string {
+  const sections = [
+    finding.retrievalText,
+    `Headline: ${finding.finding}`,
+    finding.technicalDetail ? `Technical detail: ${finding.technicalDetail}` : '',
+    `Explanation: ${finding.plainLanguage}`,
+    finding.contextHint ? `Code location: ${finding.contextHint}` : '',
+    finding.retrievalTerms?.length ? `Concrete terms: ${finding.retrievalTerms.join(', ')}` : '',
+  ].filter(Boolean);
+
+  return sections.join('\n');
+}
+
+async function fetchCandidateArticles(
   db: SupabaseClient,
+  embedding: number[],
   similarityThreshold: number,
 ): Promise<CandidateArticle[]> {
-  const embedding = await embedder.embed(finding.plainLanguage);
   const cutoff = new Date(Date.now() - MATCH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  // pgvector cosine similarity search via Supabase RPC
   const { data, error } = await db.rpc('match_article_chunks', {
     query_embedding: embedding,
     similarity_threshold: similarityThreshold,
-    match_count: TOP_CANDIDATES * 3,  // fetch more, deduplicate by article below
+    match_count: TOP_CANDIDATES * 3,
     min_quality_score: QUALITY_GATE,
     week_of_cutoff: cutoff,
   });
@@ -67,14 +81,12 @@ async function stage1BiEncoder(
 
   const chunks = (data ?? []) as ChunkRow[];
 
-  // Deduplicate: keep best similarity per article
   const bestByArticle = new Map<string, number>();
   for (const chunk of chunks) {
     const prev = bestByArticle.get(chunk.content_item_id) ?? 0;
     if (chunk.similarity > prev) bestByArticle.set(chunk.content_item_id, chunk.similarity);
   }
 
-  // Sort by similarity DESC, take top 3 unique articles
   const topMatches = [...bestByArticle.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_CANDIDATES)
@@ -103,6 +115,46 @@ async function stage1BiEncoder(
 }
 
 /**
+ * Stage 1 — pgvector bi-encoder search (~5ms + 1 embedding call per finding).
+ *
+ * Embeds a retrieval-oriented narrative, searches article_chunks by cosine similarity,
+ * and falls back to looser thresholds before giving up.
+ */
+async function stage1BiEncoder(
+  finding: FindingInput,
+  embedder: IEmbedder,
+  db: SupabaseClient,
+  similarityThreshold: number,
+): Promise<Stage1Result> {
+  const queryText = buildRetrievalQuery(finding);
+  const embedding = await embedder.embed(queryText);
+  const thresholds = [similarityThreshold];
+  for (const fallback of FALLBACK_THRESHOLDS) {
+    if (fallback < similarityThreshold && !thresholds.includes(fallback)) {
+      thresholds.push(fallback);
+    }
+  }
+  if (!thresholds.includes(0)) thresholds.push(0);
+
+  for (const threshold of thresholds) {
+    const candidates = await fetchCandidateArticles(db, embedding, threshold);
+    if (candidates.length > 0) {
+      return {
+        candidates,
+        thresholdUsed: threshold,
+        queryText,
+      };
+    }
+  }
+
+  return {
+    candidates: [],
+    thresholdUsed: thresholds[thresholds.length - 1] ?? similarityThreshold,
+    queryText,
+  };
+}
+
+/**
  * Stage 2 — AI cross-encoder (one batched call per finding, all candidates evaluated together).
  *
  * Returns null if no strong match found or if AI call fails.
@@ -127,7 +179,8 @@ Respond ONLY as a JSON array. No markdown, no explanation outside the array.`;
   const userPrompt = `Code change (finding):
 - Module: ${finding.moduleId}
 - Headline: ${finding.finding}
-- Context: ${finding.plainLanguage}${finding.contextHint ? `\n- File: ${finding.contextHint}` : ''}
+- Technical detail: ${finding.technicalDetail ?? 'n/a'}
+- Context: ${finding.plainLanguage}${finding.contextHint ? `\n- File: ${finding.contextHint}` : ''}${finding.retrievalTerms?.length ? `\n- Concrete terms: ${finding.retrievalTerms.join(', ')}` : ''}
 
 Candidate articles:
 ${candidateList}
@@ -231,11 +284,34 @@ export async function matchFindingsToArticles(
   const similarityThreshold = options?.similarityThreshold ?? SIMILARITY_THRESHOLD;
   for (const finding of findings) {
     try {
-      const candidates = await stage1BiEncoder(finding, embedder, db, similarityThreshold);
-      if (candidates.length === 0) continue;
+      const stage1 = await stage1BiEncoder(finding, embedder, db, similarityThreshold);
+      if (stage1.candidates.length === 0) {
+        logger.info('content.match.stage1_no_candidates', {
+          moduleId: finding.moduleId,
+          threshold: similarityThreshold,
+        });
+        continue;
+      }
 
-      const match = await stage2CrossEncoder(finding, candidates, aiClient);
-      if (!match) continue;
+      logger.info('content.match.stage1_candidates', {
+        moduleId: finding.moduleId,
+        threshold_requested: similarityThreshold,
+        threshold_used: stage1.thresholdUsed,
+        candidates: stage1.candidates.map((candidate) => ({
+          title: candidate.title,
+          similarity: Number(candidate.match_strength.toFixed(4)),
+        })),
+        query_preview: stage1.queryText.slice(0, 160),
+      });
+
+      const match = await stage2CrossEncoder(finding, stage1.candidates, aiClient);
+      if (!match) {
+        logger.info('content.match.stage2_no_strong_match', {
+          moduleId: finding.moduleId,
+          threshold_used: stage1.thresholdUsed,
+        });
+        continue;
+      }
 
       // Record match stats asynchronously — don't block post generation
       recordMatch(db, match.articleId, match.sourceId).catch((err) => {
