@@ -44,6 +44,7 @@ async function main(): Promise<void> {
   const findings = await runPipeline({
     diffs: commit.diffs,
     commitMessage: commit.message,
+    commitBody: commit.body,
     languages: commit.languages,
     repo: commit.repo,
     sha: commit.sha,
@@ -62,6 +63,8 @@ async function main(): Promise<void> {
     console.log(`  Finding:   ${finding.finding}`);
     console.log(`  Technical: ${finding.technicalDetail}`);
     console.log(`  Plain:     ${finding.plainLanguage.slice(0, 120)}...`);
+    if (finding.retrievalText) console.log(`  Retrieval: ${finding.retrievalText.slice(0, 160)}...`);
+    if (finding.retrievalTerms?.length) console.log(`  Terms:     ${finding.retrievalTerms.join(', ')}`);
     if (finding.evidence) {
       if (finding.evidence.before) console.log(`  Before:    ${finding.evidence.before}`);
       if (finding.evidence.after)  console.log(`  After:     ${finding.evidence.after}`);

@@ -6,14 +6,28 @@ interface SecurityPattern {
   readonly technicalDetail: string;
   readonly explanation: string;
   readonly isConcern: boolean;
+  readonly retrievalTerms?: readonly string[];
   detect(addedLines: readonly string[], filename: string): boolean;
 }
 
 const SECRET_REGEX = /(?:api[_-]?key|secret|token|password|credentials)\s*[:=]\s*['"][A-Za-z0-9+/=_-]{16,}['"]/i;
 const SQL_CONCAT_REGEX = /(?:`SELECT|`INSERT|`UPDATE|`DELETE|`DROP).*\$\{|['"]SELECT.*['"]\s*\+|['"]INSERT.*['"]\s*\+/i;
+const KMS_ENCRYPTION_REGEX = /@google-cloud\/kms|KeyManagementServiceClient|encrypted_dek|envelope encryption|createCipheriv|createDecipheriv|aes-256-gcm|getAuthTag|setAuthTag|kmsKeyName|resolveTenantSecrets|wrap(ped)? key|unwrap/i;
 const TEST_FILE_REGEX = /\.(test|spec)\.(ts|tsx|js|jsx)$|__tests__\//;
 
 const PATTERNS: readonly SecurityPattern[] = [
+  {
+    name: 'key management / envelope encryption',
+    score: 9,
+    isConcern: false,
+    technicalDetail: 'Envelope encryption with KMS-backed key management — a KEK protects tenant-scoped DEKs, while local AES-GCM handles the actual payload encryption.',
+    explanation: 'This is a serious security hardening step. Instead of leaving sensitive tokens in plaintext or relying on one shared secret, the system wraps per-tenant keys with a managed KMS boundary and decrypts data only when needed.',
+    retrievalTerms: ['kms', 'envelope encryption', 'dek', 'kek', 'aes-256-gcm', 'tenant secrets'],
+    detect: (lines, filename) => {
+      if (TEST_FILE_REGEX.test(filename)) return false;
+      return lines.some((line) => KMS_ENCRYPTION_REGEX.test(line));
+    },
+  },
   {
     name: 'hardcoded secret',
     score: 9,
@@ -95,6 +109,7 @@ export class SecurityModule implements CodeAnalyzer {
             plainLanguage: pattern.explanation,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
+            retrievalTerms: pattern.retrievalTerms ? [...pattern.retrievalTerms] : undefined,
           };
         }
       }

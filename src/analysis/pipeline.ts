@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { MODULE_REGISTRY } from './modules/index.js';
 import type { AnalysisContext, Finding, CodeAnalyzer } from './types.js';
+import { enrichFindingsForRetrieval } from './retrieval-enrichment.js';
 
 /**
  * Runs all applicable modules in parallel and returns the top N findings
@@ -62,7 +63,8 @@ export async function runPipeline(
   }
 
   const MIN_INTEREST_SCORE = 5;
-  const sorted = findings
+  const enrichedFindings = enrichFindingsForRetrieval(findings, ctx);
+  const sorted = enrichedFindings
     .filter((f) => f.interestScore >= MIN_INTEREST_SCORE)
     .map((f) => ({
       finding: f,
