@@ -464,6 +464,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { error } = await this.db
       .from('scheduled_slots')
       .insert({
+        tenant_id: this.tenantId,
         platform: slot.platform,
         scheduled_at: slot.scheduled_at.toISOString(),
         voice_post_id: slot.voice_post_id,
@@ -484,6 +485,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await this.db
       .from('scheduled_slots')
       .select('scheduled_at')
+      .eq('tenant_id', this.tenantId)
       .eq('platform', platform)
       .gte('scheduled_at', startOfDay)
       .lte('scheduled_at', endOfDay);
