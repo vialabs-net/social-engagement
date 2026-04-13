@@ -8,7 +8,7 @@ import type { Finding } from '../analysis/types.js';
 import { MODULE_REGISTRY } from '../analysis/modules/index.js';
 import { createAIClient, createEmbedder } from '../ai/factory.js';
 import { generatePosts } from '../ai/post-generator.js';
-import { buildChapterContext, buildVarietyConstraint } from '../ai/prompt-builder.js';
+import { buildChapterContext, buildIndustryContextBlock, buildVarietyConstraint } from '../ai/prompt-builder.js';
 import { matchFindingsToArticles } from '../content/matcher.js';
 import { BufferClient } from '../buffer/client.js';
 import { publishToBuffer } from '../buffer/publisher.js';
@@ -430,7 +430,10 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
                 similarityThreshold,
               });
               if (match) {
-                industryContext = `Connection: ${match.connection}`;
+                industryContext = buildIndustryContextBlock({
+                  connection: match.connection,
+                  articleUrl: match.articleUrl,
+                });
                 draftMetadata = {
                   ...draftMetadata,
                   context_status: 'matched',
