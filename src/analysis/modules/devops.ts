@@ -12,6 +12,20 @@ const DEVOPS_FILE_REGEX = /(?:Dockerfile|\.ya?ml$|\.github\/workflows|Makefile|J
 
 const PATTERNS: readonly DevopsPattern[] = [
   {
+    name: 'manual workflow override',
+    score: 8,
+    technicalDetail: 'Operator-facing workflow override — GitHub Actions inputs or variables expose a runtime knob so operators can change behavior per run without changing source code.',
+    explanation: 'A manual workflow input turns an internal constant into an operational control. You can run a one-off catch-up, backfill, or safer low-volume execution without branching the code or redeploying a special build.',
+    detect: (lines, filename) => {
+      if (!/(\.github\/workflows|\.ya?ml$)/i.test(filename)) return false;
+      return lines.some((line) =>
+        /\binputs\s*:/.test(line)
+        || /\$\{\{\s*inputs\./.test(line)
+        || /\$\{\{\s*vars\./.test(line),
+      );
+    },
+  },
+  {
     name: 'multi-stage Docker build',
     score: 9,
     technicalDetail: 'Multi-stage Dockerfile — separates build and runtime stages to produce minimal production images without build tools or source code.',

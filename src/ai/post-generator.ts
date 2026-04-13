@@ -73,7 +73,9 @@ export async function generatePosts(
 
   const rawResponse = await client.complete(systemPrompt, userPrompt);
 
-  const { post, shortPost } = parseResponse(rawResponse);
+  const parsed = parseResponse(rawResponse);
+  const post = enforceMainPostLength(parsed.post, options.voiceProfile.post_length.max);
+  const shortPost = parsed.shortPost;
 
   const topFinding = findings[0]?.finding;
   const topModuleId = findings[0]?.moduleId;
@@ -115,5 +117,69 @@ function parseResponse(raw: string): { post: string; shortPost: string } {
     post: (postMatch[1] ?? '').trim(),
     shortPost: (shortMatch[1] ?? '').trim(),
   };
+}
+
+function enforceMainPostLength(post: string, maxChars: number): string {
+  const normalized = post.trim();
+  if (normalized.length <= maxChars) return normalized;
+
+  const { body, hashtags } = splitTrailingHashtags(normalized);
+  const reservedChars = hashtags ? hashtags.length + 2 : 0;
+  const availableForBody = Math.max(200, maxChars - reservedChars);
+  const trimmedBody = trimToBoundary(body, availableForBody);
+  const next = hashtags ? `${trimmedBody}\n\n${hashtags}` : trimmedBody;
+
+  logger.warn('ai.generate.post_truncated', {
+    original_length: normalized.length,
+    max_chars: maxChars,
+    final_length: next.length,
+  });
+
+  return next.length <= maxChars ? next : trimToBoundary(next, maxChars);
+}
+
+function splitTrailingHashtags(text: string): { body: string; hashtags: string } {
+  const match = text.match(/(?:\n|^)(#[^\s#]+(?:\s+#[^\s#]+)*)\s*$/);
+  if (!match || match.index === undefined) {
+    return { body: text, hashtags: '' };
+  }
+
+  return {
+    body: text.slice(0, match.index).trimEnd(),
+    hashtags: match[1] ?? '',
+  };
+}
+
+function trimToBoundary(text: string, maxChars: number): string {
+  const normalized = text.trim();
+  if (normalized.length <= maxChars) return normalized;
+
+  const minBoundaryIndex = Math.floor(maxChars * 0.6);
+  const boundarySlice = normalized.slice(0, maxChars + 1);
+  const paragraphBoundary = boundarySlice.lastIndexOf('\n\n');
+  if (paragraphBoundary >= minBoundaryIndex) {
+    return boundarySlice.slice(0, paragraphBoundary).trimEnd();
+  }
+
+  const sentenceBoundary = findSentenceBoundary(boundarySlice, minBoundaryIndex);
+  if (sentenceBoundary >= minBoundaryIndex) {
+    return boundarySlice.slice(0, sentenceBoundary).trimEnd();
+  }
+
+  const fallbackIndex = normalized.lastIndexOf(' ', maxChars - 1);
+  const hardLimit = fallbackIndex >= minBoundaryIndex ? fallbackIndex : Math.max(0, maxChars - 1);
+  return `${normalized.slice(0, hardLimit).trimEnd()}…`;
+}
+
+function findSentenceBoundary(text: string, minBoundaryIndex: number): number {
+  for (let idx = text.length - 1; idx >= minBoundaryIndex; idx--) {
+    const char = text[idx];
+    if (char !== '.' && char !== '!' && char !== '?') continue;
+    const next = text[idx + 1];
+    if (next === undefined || /\s/.test(next)) {
+      return idx + 1;
+    }
+  }
+  return -1;
 }
 export type { PromptError } from './anthropic-adapter.js';

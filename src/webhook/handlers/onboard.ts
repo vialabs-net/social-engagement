@@ -224,11 +224,11 @@ function html(
         <div class="split">
           <div>
             <label>Post length min</label>
-            <input type="number" name="post_length_min" min="300" max="3000" value="${voiceProfile.post_length.min}">
+            <input type="number" name="post_length_min" min="300" max="1500" value="${voiceProfile.post_length.min}">
           </div>
           <div>
             <label>Post length max</label>
-            <input type="number" name="post_length_max" min="300" max="3000" value="${voiceProfile.post_length.max}">
+            <input type="number" name="post_length_max" min="300" max="1500" value="${voiceProfile.post_length.max}">
           </div>
         </div>
       </div>

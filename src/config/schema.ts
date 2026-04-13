@@ -56,9 +56,9 @@ export const VoiceProfileSchema = z.object({
   hashtags_mode: HashtagModeSchema.default('prefer'),
   post_length: z.object({
     min: z.number().int().min(300),
-    max: z.number().int().max(3000),
+    max: z.number().int().max(1500),
   }).refine(({ min, max }) => min < max, 'post_length.min must be lower than post_length.max')
-    .default({ min: 1200, max: 1800 }),
+    .default({ min: 1000, max: 1500 }),
   content_strategy: ContentStrategySchema.default({
     audience: 'mixed',
     skip_patterns: [],
@@ -82,7 +82,7 @@ export const DEFAULT_VOICE_PROFILE: VoiceProfile = {
   rhythm: 'mixed',
   hashtags: [],
   hashtags_mode: 'prefer',
-  post_length: { min: 1200, max: 1800 },
+  post_length: { min: 1000, max: 1500 },
   content_strategy: {
     audience: 'mixed',
     skip_patterns: [],
