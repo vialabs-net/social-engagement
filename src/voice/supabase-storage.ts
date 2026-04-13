@@ -493,16 +493,26 @@ export class SupabaseStorage implements IVoiceStorage {
   }
 
   private async fetchVoiceProfileRow(authorLogin: string | null): Promise<VoiceProfileRow | null> {
-    let query = this.db
+    if (authorLogin === null) {
+      // Tenant default: scoped to this tenant (org-level fallback for unknown authors)
+      const { data, error } = await this.db
+        .from('voice_profiles')
+        .select('id, github_author_login, voice, version')
+        .eq('tenant_id', this.tenantId)
+        .is('github_author_login', null)
+        .maybeSingle();
+      if (error) throw new Error(`fetchVoiceProfileRow failed: ${error.message}`);
+      return (data as VoiceProfileRow | null) ?? null;
+    }
+
+    // User voice: global across tenants — the same author has one voice everywhere
+    const { data, error } = await this.db
       .from('voice_profiles')
       .select('id, github_author_login, voice, version')
-      .eq('tenant_id', this.tenantId);
-
-    query = authorLogin === null
-      ? query.is('github_author_login', null)
-      : query.eq('github_author_login', authorLogin);
-
-    const { data, error } = await query.maybeSingle();
+      .eq('github_author_login', authorLogin)
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
     if (error) throw new Error(`fetchVoiceProfileRow failed: ${error.message}`);
     return (data as VoiceProfileRow | null) ?? null;
   }
