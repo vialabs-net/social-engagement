@@ -5,6 +5,11 @@ on:
     # Sunday 6am CLT = 10:00 UTC (CLT = UTC-4 in summer)
     - cron: '0 10 * * 0'
   workflow_dispatch:
+    inputs:
+      promotion_limit:
+        description: 'Queued sources to promote this run'
+        type: number
+        default: 20
 
 jobs:
   fetch:
@@ -31,4 +36,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CONTENT_FETCH_PROMOTION_LIMIT: ${{ inputs.promotion_limit || vars.CONTENT_FETCH_PROMOTION_LIMIT || '20' }}
         run: npx tsx src/content/scripts/content-fetch-main.ts

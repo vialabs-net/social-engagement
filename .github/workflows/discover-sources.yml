@@ -59,4 +59,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CONTENT_FETCH_PROMOTION_LIMIT: ${{ vars.CONTENT_FETCH_PROMOTION_LIMIT || '20' }}
         run: npx tsx src/content/scripts/content-fetch-main.ts
