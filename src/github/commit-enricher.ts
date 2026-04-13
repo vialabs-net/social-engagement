@@ -23,6 +23,7 @@ interface RawCommitData {
     message: string;
     committer?: { date?: string };
   };
+  author?: { login?: string };
   stats?: { additions?: number; deletions?: number };
   files?: Array<{
     filename: string;
@@ -41,7 +42,7 @@ export async function enrichCommit(
   owner: string,
   repo: string,
   sha: string,
-  authorLogin: string,
+  fallbackAuthorLogin: string | null,
 ): Promise<EnrichedCommit> {
   let raw: RawCommitData;
   try {
@@ -63,7 +64,7 @@ export async function enrichCommit(
     body: bodyLines.join('\n').trim(),
     fullMessage,
     repo: `${owner}/${repo}`,
-    authorLogin,
+    authorLogin: raw.author?.login ?? fallbackAuthorLogin ?? '',
     totalAdditions: raw.stats?.additions ?? 0,
     totalDeletions: raw.stats?.deletions ?? 0,
     diffs,
