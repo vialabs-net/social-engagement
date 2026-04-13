@@ -539,7 +539,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         if (secrets.bufferAccessToken) {
           const bufferClient = new BufferClient(secrets.bufferAccessToken);
           const publishResult = await publishToBuffer(
-            bufferClient, storage, config, draftId, bufferText, candidate.commit.message,
+            bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
           );
           if (publishResult) {
             await notifyNewDraft(github, owner, repo, candidate.commit, [publishResult]);

@@ -308,6 +308,7 @@ async function main(): Promise<void> {
           config,
           draftId,
           bufferText,
+          'linkedin',
           candidate.commit.message,
         );
 
