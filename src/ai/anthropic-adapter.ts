@@ -40,11 +40,15 @@ export class AnthropicAdapter implements IAIClient {
         }
         return block.text;
       } catch (err) {
-        const e = err as { status?: number; message?: string };
+        const e = err as { status?: number; message?: string; cause?: unknown };
         if (e.status === 400) throw new PromptError(`Bad request: ${e.message}`);
         if (e.status === 401) throw new Error('Anthropic API: Unauthorized. Check ANTHROPIC_API_KEY.');
         if (e.status && e.status >= 402 && e.status < 500) {
           throw new PromptError(`Anthropic API ${e.status}: ${e.message}`);
+        }
+        if (!e.status && e.cause) {
+          const cause = e.cause as { code?: string; message?: string };
+          throw new Error(`Connection error — ${cause.code ?? cause.message ?? String(cause)}`);
         }
         throw err;
       }
