@@ -20,6 +20,7 @@ interface CandidateArticle {
   main_thesis: string;
   key_insights: string[];
   source_id: string;
+  url: string;
   match_strength: number;
 }
 
@@ -27,8 +28,9 @@ export interface MatchedContext {
   readonly articleId: string;
   readonly sourceId: string;
   readonly matchStrength: number;
-  readonly connection: string;   // one sentence from cross-encoder
+  readonly connection: string;   // one shared-pattern sentence from cross-encoder
   readonly articleTitle: string;
+  readonly articleUrl: string;
 }
 
 interface FindingInput {
@@ -97,7 +99,7 @@ async function fetchCandidateArticles(
 
   const { data: articles, error: articleError } = await db
     .from('content_items')
-    .select('id, title, main_thesis, key_insights, source_id')
+    .select('id, title, main_thesis, key_insights, source_id, url')
     .in('id', topArticleIds);
 
   if (articleError) {
@@ -163,7 +165,7 @@ async function stage2CrossEncoder(
   finding: FindingInput,
   candidates: CandidateArticle[],
   aiClient: IAIClient,
-): Promise<{ articleId: string; sourceId: string; matchStrength: number; connection: string; title: string } | null> {
+): Promise<{ articleId: string; sourceId: string; matchStrength: number; connection: string; title: string; url: string } | null> {
   if (candidates.length === 0) return null;
 
   const candidateList = candidates
@@ -187,7 +189,9 @@ ${candidateList}
 
 For each candidate, respond with:
 - strength: "strong" (direct connection), "weak" (tangential), or "none"
-- connection: one sentence explaining how the code relates to the article (only if strong, else null)
+- connection: one sentence naming the shared technical pattern or tradeoff in neutral language (only if strong, else null)
+- the connection must work as industry validation later without implying the author read the article
+- never write it like a citation, recommendation, or summary of the article
 
 Respond as JSON array:
 [
@@ -221,7 +225,7 @@ Respond as JSON array:
 function findStrongMatch(
   results: Array<{ candidate: number; strength: string; connection: string | null }>,
   candidates: CandidateArticle[],
-): { articleId: string; sourceId: string; matchStrength: number; connection: string; title: string } | null {
+): { articleId: string; sourceId: string; matchStrength: number; connection: string; title: string; url: string } | null {
   for (const result of results) {
     if (result.strength === 'strong' && result.connection) {
       const idx = result.candidate - 1;
@@ -233,6 +237,7 @@ function findStrongMatch(
           matchStrength: article.match_strength,
           connection: result.connection,
           title: article.title,
+          url: article.url,
         };
       }
     }
@@ -331,6 +336,7 @@ export async function matchFindingsToArticles(
         matchStrength: match.matchStrength,
         connection: match.connection,
         articleTitle: match.title,
+        articleUrl: match.url,
       };
     } catch (err) {
       logger.warn('content.match.finding_error', { moduleId: finding.moduleId, error: String(err) });

@@ -62,6 +62,11 @@ export interface VoicePromptContext {
   varietyConstraint?: string;
 }
 
+export interface IndustryContextPromptInput {
+  connection: string;
+  articleUrl?: string | null;
+}
+
 export function buildSystemPrompt(
   config: Config,
   voiceProfile: VoiceProfile,
@@ -201,7 +206,6 @@ export function buildUserPrompt(
     parts.push('');
     parts.push('<industry_context>');
     parts.push(industryContext);
-    parts.push('Use this only if it strengthens the post naturally.');
     parts.push('</industry_context>');
   }
 
@@ -213,6 +217,7 @@ export function buildUserPrompt(
   parts.push('Describe what changed in the system behavior, control surface, reliability, cost, or operational flexibility.');
   parts.push('Use concrete implementation details. Do not invent files, numbers, or project context.');
   parts.push('If a finding touches AI, translate that into the human-made constraint, interface, or behavior change. Do not give the model authorship credit for the commit.');
+  parts.push('If <industry_context> is used, treat it as parallel validation from the industry, never as a citation or proof of the argument.');
   parts.push('The main post must stay at or under the configured character cap.');
   parts.push('Keep the main post under the configured hard cap. If needed, prefer fewer points and cleaner sentences over extra explanation.');
   parts.push('If <voice_exposure> exists, match its level of directness and structure without copying phrases literally.');
@@ -227,6 +232,29 @@ export function buildUserPrompt(
   parts.push('</task>');
 
   return parts.join('\n');
+}
+
+export function buildIndustryContextBlock(input: IndustryContextPromptInput): string {
+  const sourceFamily = inferIndustrySourceFamily(input.articleUrl);
+  const lines = [
+    'This is parallel industry signal, not source attribution.',
+    'The author is speaking from their own code and judgment. Do not imply they read the matched article.',
+    'Only use this if it reinforces a point already present in the commit and findings.',
+    'Keep it subordinate to the main argument. If removed, the post should still work.',
+    'Use language of convergence, not derivation.',
+    `Shared pattern: ${input.connection}`,
+    'Prefer lines like "this kind of tradeoff is showing up more and more in engineering conversations" or "this sits in the same broader shift other teams are moving toward."',
+    'Never mention the article title.',
+    'Never write "according to", "as this article explains", "after reading", or "inspired by".',
+  ];
+
+  if (sourceFamily) {
+    lines.push(`If explicit naming helps, mention only the broader source family as an example: ${sourceFamily}.`);
+  } else {
+    lines.push('Prefer implicit industry language over naming any specific source.');
+  }
+
+  return lines.join('\n');
 }
 
 export function buildVarietyConstraint(
@@ -491,12 +519,32 @@ function formatPreferenceLines(voiceProfile: VoiceProfile): string[] {
   }
 
   if (preferences.industry_context_preference === 'avoid') {
-    lines.push('Industry context has often been edited out. Only use it when it is essential and natural.');
+    lines.push('Industry context has often been edited out. Only use it when it adds clear value without competing with the main point.');
   } else if (preferences.industry_context_preference === 'prefer') {
-    lines.push('Industry context has historically survived editing well. Use it when the match is strong.');
+    lines.push('Industry context has historically survived editing well. Use it as secondary validation when the match is strong.');
   }
 
   return lines;
+}
+
+function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
+  if (!articleUrl) return null;
+
+  try {
+    const hostname = new URL(articleUrl).hostname.toLowerCase().replace(/^www\./, '');
+
+    if (hostname.includes('uber.com')) return "engineering blogs like Uber's";
+    if (hostname.includes('bytebytego.com')) return 'architecture newsletters like ByteByteGo';
+    if (hostname.includes('cloudflare.com')) return "engineering blogs like Cloudflare's";
+    if (hostname.includes('linkedin.com')) return "engineering blogs like LinkedIn's";
+    if (hostname.includes('netflix.com')) return "engineering blogs like Netflix's";
+    if (hostname.includes('stripe.com')) return "engineering blogs like Stripe's";
+    if (hostname.includes('aws.amazon.com')) return 'engineering writing like the AWS Builders Library';
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function formatHashtagInstructions(voiceProfile: VoiceProfile): string {
