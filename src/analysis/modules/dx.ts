@@ -12,6 +12,26 @@ const CONFIG_FILE_REGEX = /(?:config|settings|options|env)\b/i;
 
 const PATTERNS: readonly DxPattern[] = [
   {
+    name: 'runtime config override',
+    score: 8,
+    technicalDetail: 'Runtime config override — a hardcoded operational decision is exposed through an environment variable or runtime input with parsing, validation, and a safe default.',
+    explanation: 'Turning a hardcoded limit into a runtime control changes who can steer the system. Operators can tune behavior for one environment or one run without editing code, while the default keeps steady-state behavior predictable.',
+    detect: (lines, filename) => {
+      if (!/\.(ts|js|mjs|cjs|ya?ml)$/i.test(filename)) return false;
+      const joined = lines.join('\n');
+      const hasEnvRead = /\bprocess\.env\[['"][A-Z0-9_]+['"]\]/.test(joined);
+      const hasRuntimeFallback =
+        /\bDEFAULT_[A-Z0-9_]+\b/.test(joined)
+        || /\bNumber\.parseInt\b/.test(joined)
+        || /\bfallback\b/i.test(joined)
+        || /\breturn DEFAULT_[A-Z0-9_]+\b/.test(joined);
+      const hasWorkflowOverride =
+        /(\.github\/workflows|\.ya?ml$)/i.test(filename)
+        && lines.some((line) => /\binputs\s*:/.test(line) || /\$\{\{\s*(inputs|vars)\./.test(line));
+      return (hasEnvRead && hasRuntimeFallback) || hasWorkflowOverride;
+    },
+  },
+  {
     name: 'custom error class',
     score: 8,
     technicalDetail: 'Custom error class — domain-specific errors with descriptive names that communicate what went wrong and why.',
