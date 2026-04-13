@@ -209,8 +209,20 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     return { authorKey, state };
   };
 
-  // Get the list of commits in this push range
-  const commits = await github.compareCommits(owner, repo, job.before_sha, job.after_sha);
+  // Get the list of commits in this push range.
+  // When before_sha is all zeros, this is a new branch creation — compareCommits
+  // returns 404 in that case. Fetch the tip commit directly instead.
+  const ZERO_SHA = '0000000000000000000000000000000000000000';
+  let commits: { sha: string; message: string }[];
+  if (job.before_sha === ZERO_SHA) {
+    const tip = await github.getCommit(owner, repo, job.after_sha) as {
+      sha: string;
+      commit: { message: string };
+    };
+    commits = [{ sha: tip.sha, message: tip.commit.message }];
+  } else {
+    commits = await github.compareCommits(owner, repo, job.before_sha, job.after_sha);
+  }
   logger.info('worker.job.commits', { jobId, count: commits.length });
 
   for (const pushCommit of commits) {
