@@ -1169,7 +1169,7 @@ Sources without a discoverable RSS feed are logged and skipped — not added to 
 Runs every Sunday via `content-fetch.yml` (automatic) or manually via `workflow_dispatch` in GitHub Actions. Manual dispatch is the correct way to run it outside the weekly schedule — no code change needed.
 
 ```
-Promote up to 20 queued sources → active. The 20-source limit per week controls classification and embedding budget: 20 new sources × ~3 articles/week × ~$0.0013/article = ~$0.08/week overhead. It also lets the pipeline evaluate sources gradually — promoting all queued sources at once on week 1 would flood the corpus with unproven sources before the lifecycle evaluator has enough signal to prune them.
+Promote up to CONTENT_FETCH_PROMOTION_LIMIT queued sources → active (default 20). The default 20-source limit per week controls classification and embedding budget: 20 new sources × ~3 articles/week × ~$0.0013/article = ~$0.08/week overhead. It also lets the pipeline evaluate sources gradually — promoting all queued sources at once on week 1 would flood the corpus with unproven sources before the lifecycle evaluator has enough signal to prune them. Operators can temporarily raise the limit for corpus catch-up runs, then return to 20 for steady-state cost control.
 Fetch RSS from all active sources (p-limit 5, 15s domain delay)
 
 Per article:

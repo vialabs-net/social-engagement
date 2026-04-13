@@ -221,7 +221,7 @@ export async function countSourcesByStatus(db: SupabaseClient): Promise<Record<s
 }
 
 /**
- * Promotes up to 20 queued sources to active.
+ * Promotes up to `limit` queued sources to active.
  * Priority: discovered_from='both' first, then oldest.
  */
 export async function promoteQueuedSources(db: SupabaseClient, limit = 20): Promise<number> {

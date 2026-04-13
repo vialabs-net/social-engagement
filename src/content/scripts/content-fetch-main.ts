@@ -2,7 +2,7 @@
  * Weekly content fetch pipeline entry point.
  *
  * Steps:
- * A. Promote up to 20 queued sources to active
+ * A. Promote up to CONTENT_FETCH_PROMOTION_LIMIT queued sources to active
  * B. Fetch RSS from all active/probation sources
  * C. Extract, dedup, structural filter, classify, chunk, embed, store
  * D. Log summary + health report
@@ -34,11 +34,14 @@ import { savePipelineRun, logHealthReport } from '../health-reporter.js';
 import type { ContentSource, PipelineRunStats, SourceTrust } from '../types.js';
 import type { ArticleToStore } from '../content-storage.js';
 
+const DEFAULT_FETCH_PROMOTION_LIMIT = 20;
+
 async function main(): Promise<void> {
   const supabaseUrl = process.env['SUPABASE_URL'];
   const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
   const anthropicKey = process.env['ANTHROPIC_API_KEY'];
   const openaiKey = process.env['OPENAI_API_KEY'];
+  const promotionLimit = readPromotionLimitFromEnv();
 
   if (!supabaseUrl || !supabaseKey || !anthropicKey || !openaiKey) {
     throw new Error('SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY required');
@@ -60,10 +63,11 @@ async function main(): Promise<void> {
   stats.sources_active = (sourceCountsBefore['active'] ?? 0) + (sourceCountsBefore['active:protected'] ?? 0);
 
   // ── A. Promote queued sources ──────────────────────────────────────────────
-  const promoted = await promoteQueuedSources(db, 20);
+  const promoted = await promoteQueuedSources(db, promotionLimit);
   stats.sources_promoted = promoted;
   logger.info('content.fetch.promoted', {
     count: promoted,
+    limit: promotionLimit,
     queued_before: stats.sources_queued,
     active_before: stats.sources_active,
   });
@@ -285,3 +289,19 @@ main().catch((err) => {
   logger.error('content.fetch.fatal', { error: String(err) });
   process.exit(1);
 });
+
+function readPromotionLimitFromEnv(): number {
+  const raw = process.env['CONTENT_FETCH_PROMOTION_LIMIT'];
+  if (!raw) return DEFAULT_FETCH_PROMOTION_LIMIT;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1) {
+    logger.warn('content.fetch.invalid_promotion_limit', {
+      raw,
+      fallback: DEFAULT_FETCH_PROMOTION_LIMIT,
+    });
+    return DEFAULT_FETCH_PROMOTION_LIMIT;
+  }
+
+  return parsed;
+}
