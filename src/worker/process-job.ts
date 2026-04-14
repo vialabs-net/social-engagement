@@ -18,7 +18,7 @@ import { getInstallationToken } from './github-app-auth.js';
 import { logger } from '../utils/logger.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config, VoiceProfile } from '../config/schema.js';
-import type { SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
+import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
 import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 import { filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
 import { computeVoiceStage } from '../voice/stage.js';
@@ -389,6 +389,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             const { data, error } = await deps.db
               .from('voice_posts')
               .select('*')
+              .eq('tenant_id', tenant.id)
               .in('id', poolIds);
             if (!error) exposurePool = (data ?? []) as typeof exposurePool;
           }
@@ -570,14 +571,16 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   logger.info('worker.job.done', { jobId });
 }
 
-async function shouldProbeContext(
-  storage: SupabaseStorage,
+export async function shouldProbeContext(
+  storage: Pick<IVoiceStorage, 'countDraftsSince'>,
   authorLogin: string | null,
   dayStartIso: string,
 ): Promise<boolean> {
   if (!authorLogin) return false;
   const draftsToday = await storage.countDraftsSince(authorLogin, dayStartIso);
-  return draftsToday > 0 && draftsToday % 5 === 4;
+  // Probe on the first draft of the day. Previous condition (% 5 === 4) never
+  // fired because max_daily_posts_per_author defaults to 2.
+  return draftsToday === 1;
 }
 
 function toTodayDraftState(post: Pick<VoicePost, 'created_at' | 'opening_move' | 'top_module_id'>): TodayDraftState {
