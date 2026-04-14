@@ -58,6 +58,7 @@ export interface ProcessJobDeps {
   readonly supabaseServiceKey: string;
   readonly anthropicApiKey: string;
   readonly openaiApiKey?: string;
+  readonly appBaseUrl: string;
 }
 
 const MATCHER_MAX_TOKENS = 400;
@@ -601,7 +602,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
           );
           if (publishResult) {
-            await notifyNewDraft(github, owner, repo, candidate.commit, [publishResult]);
+            await notifyNewDraft(github, owner, repo, candidate.commit, [publishResult], deps.appBaseUrl);
           }
         } else {
           logger.info('worker.commit.buffer_skipped', { sha: candidate.commit.sha, reason: 'no buffer token' });
