@@ -71,6 +71,10 @@ interface AuthorGenerationState {
   uniquePublished: number;
   voiceStage: VoiceStage;
   todayDrafts: TodayDraftState[];
+  // Per-member credentials — null means fall back to tenant-level
+  readonly memberLinkedinToken: string | null;
+  readonly memberLinkedinMemberId: string | null;
+  readonly memberBufferToken: string | null;
 }
 
 interface CommitCandidate extends RankedCommitCandidate {
@@ -197,6 +201,42 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       ? (await storage.getDraftsSince(authorLogin, dayStartIso)).map(toTodayDraftState)
       : [];
 
+    // Load per-member credentials — one query per author per job, cached below
+    let memberLinkedinToken: string | null = null;
+    let memberLinkedinMemberId: string | null = null;
+    let memberBufferToken: string | null = null;
+
+    if (authorLogin) {
+      try {
+        const { data: memberRow, error: memberError } = await deps.db
+          .from('tenant_members')
+          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, encrypted_dek')
+          .eq('tenant_id', tenant.id)
+          .eq('github_author_login', authorLogin)
+          .maybeSingle();
+
+        if (!memberError && memberRow) {
+          const row = memberRow as {
+            linkedin_access_token: string | null;
+            linkedin_member_id: string | null;
+            buffer_access_token: string | null;
+            encrypted_dek: string | null;
+          };
+          const memberSecrets = await resolveTenantSecrets({
+            encrypted_dek: row.encrypted_dek,
+            buffer_access_token: row.buffer_access_token,
+            linkedin_access_token: row.linkedin_access_token,
+          });
+          memberLinkedinToken = memberSecrets.linkedinAccessToken;
+          memberBufferToken = memberSecrets.bufferAccessToken;
+          memberLinkedinMemberId = row.linkedin_member_id;
+        }
+      } catch (err) {
+        logger.warn('worker.author.member_secrets_failed', { authorLogin, error: String(err) });
+        // Non-fatal: worker falls back to tenant-level credentials
+      }
+    }
+
     const state: AuthorGenerationState = {
       authorLogin,
       voiceProfile,
@@ -204,6 +244,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       uniquePublished,
       voiceStage,
       todayDrafts,
+      memberLinkedinToken,
+      memberLinkedinMemberId,
+      memberBufferToken,
     };
     authorStates.set(authorKey, state);
     return { authorKey, state };
@@ -510,11 +553,14 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           top_module_id: candidate.topModuleId ?? null,
         });
 
-        // Post directly to LinkedIn if connected
-        if (secrets.linkedinAccessToken && tenant.linkedin_member_id) {
+        // Post directly to LinkedIn — prefer member credentials, fall back to tenant
+        const effectiveLinkedinToken = authorState.memberLinkedinToken ?? secrets.linkedinAccessToken;
+        const effectiveLinkedinMemberId = authorState.memberLinkedinMemberId ?? tenant.linkedin_member_id;
+
+        if (effectiveLinkedinToken && effectiveLinkedinMemberId) {
           try {
-            const linkedinClient = new LinkedInClient(secrets.linkedinAccessToken);
-            await linkedinClient.post(tenant.linkedin_member_id, linkedinPost);
+            const linkedinClient = new LinkedInClient(effectiveLinkedinToken);
+            await linkedinClient.post(effectiveLinkedinMemberId, linkedinPost);
             await storage.updatePublished({
               id: draftId,
               published: linkedinPost,
@@ -536,9 +582,10 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           logger.info('worker.commit.linkedin_skipped', { sha: candidate.commit.sha, reason: 'no linkedin token' });
         }
 
-        // Create Buffer Idea if configured (for Instagram or as backup)
-        if (secrets.bufferAccessToken) {
-          const bufferClient = new BufferClient(secrets.bufferAccessToken);
+        // Create Buffer Idea — prefer member credentials, fall back to tenant
+        const effectiveBufferToken = authorState.memberBufferToken ?? secrets.bufferAccessToken;
+        if (effectiveBufferToken) {
+          const bufferClient = new BufferClient(effectiveBufferToken);
           const publishResult = await publishToBuffer(
             bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
           );
