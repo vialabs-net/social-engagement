@@ -51,6 +51,7 @@ export interface VoicePost {
   publish_source: PublishSource | null;
   generation_system?: 'v1' | 'v2_progressive' | null;
   opening_move?: string | null;
+  rejection_reason?: string | null;
 }
 
 export interface SaveDraftInput {

@@ -10,20 +10,36 @@ import type { EnrichedCommit } from '../github/commit-enricher.js';
  * The issue auto-closes after 48 hours via a comment (the workflow runs this
  * function, then a separate step closes old issues via the GitHub API).
  */
+const REJECTION_REASONS = ['hook', 'tone', 'too-technical', 'too-long', 'off-topic'] as const;
+export type RejectionReason = typeof REJECTION_REASONS[number];
+export const VALID_REJECTION_REASONS: ReadonlySet<string> = new Set(REJECTION_REASONS);
+
+const REASON_LABELS: Record<RejectionReason, string> = {
+  'hook': 'hook fallido',
+  'tone': 'tono',
+  'too-technical': 'muy técnico',
+  'too-long': 'muy largo',
+  'off-topic': 'fuera de tema',
+};
+
 export async function notifyNewDraft(
   client: GitHubClient,
   owner: string,
   notificationRepo: string,
   commit: EnrichedCommit,
   results: PublishResult[],
+  appBaseUrl: string,
 ): Promise<void> {
   if (results.length === 0) return;
 
   const commitUrl = `https://github.com/${commit.repo}/commit/${commit.sha}`;
 
-  const ideaLines = results.map(r =>
-    `- Buffer Idea ID \`${r.bufferIdeaId}\``,
-  );
+  const ideaLines = results.map((r) => {
+    const feedbackLinks = REJECTION_REASONS
+      .map((reason) => `[${REASON_LABELS[reason]}](${appBaseUrl}/feedback?id=${r.draftId}&reason=${reason})`)
+      .join(' · ');
+    return `- Buffer Idea \`${r.bufferIdeaId}\` — rechazar: ${feedbackLinks}`;
+  });
 
   const body = `## New draft in Buffer Ideas
 
@@ -35,7 +51,7 @@ ${ideaLines.join('\n')}
 
 ---
 Review in [Buffer Ideas](https://publish.buffer.com/ideas), convert to a post, and schedule.
-No action required here.
+No action required here — feedback links above are optional.
 
 _This issue will auto-close in 48 hours._`;
 

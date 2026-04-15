@@ -11,6 +11,7 @@ import { handleOnboardGet, handleOnboardPost } from './handlers/onboard.js';
 import { handleLinkedInRedirect, handleLinkedInCallback, handleLinkedInMemberRedirect, handleLinkedInMemberCallback } from './handlers/linkedin-oauth.js';
 import { handleGitHubCallback, handleGitHubMemberCallback } from './handlers/github-oauth.js';
 import { handleMemberOnboardGet, handleMemberOnboardPost } from './handlers/member-onboard.js';
+import { VALID_REJECTION_REASONS } from '../review/notifier.js';
 import { logger } from '../utils/logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
@@ -211,6 +212,7 @@ const server = createServer((req, res) => {
       .then(({ status, body, contentType }) => {
         if (status === 302) {
           res.writeHead(302, { Location: `/member/onboard?installation_id=${installationId}&error=invalid_token` });
+          res.end();
         } else {
           res.writeHead(status, { 'Content-Type': contentType });
           res.end(body);
@@ -269,6 +271,46 @@ const server = createServer((req, res) => {
           res.writeHead(500, { 'Content-Type': 'text/plain' });
           res.end('Internal error');
         });
+    });
+    return;
+  }
+
+  // Draft rejection feedback — called when user clicks a reason link in the GitHub Issue
+  if (req.method === 'GET' && path === '/feedback') {
+    const draftId = query.get('id') ?? '';
+    const reason = query.get('reason') ?? '';
+
+    if (!draftId || !VALID_REJECTION_REASONS.has(reason)) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Invalid parameters');
+      return;
+    }
+
+    (async () => {
+      const { data, error } = await db
+        .from('voice_posts')
+        .update({ rejection_reason: reason, status: 'expired' })
+        .eq('id', draftId)
+        .select('id')
+        .maybeSingle();
+
+      if (error || !data) {
+        logger.warn('feedback.not_found', { draftId, reason });
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Draft not found');
+        return;
+      }
+
+      logger.info('feedback.recorded', { draftId, reason });
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>devcast — feedback</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#09090b;color:#f4f4f5;min-height:100vh;display:flex;align-items:center;justify-content:center}.card{background:#18181b;border:1px solid #27272a;border-radius:12px;padding:32px;text-align:center;max-width:360px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;margin-right:8px}h1{font-size:1rem;font-weight:500;color:#a1a1aa;margin-top:12px}</style>
+</head><body><div class="card"><span class="dot"></span><strong style="color:#fff">Feedback recorded</strong><h1>Reason: ${reason}</h1></div></body></html>`);
+    })().catch((err: unknown) => {
+      logger.error('feedback.error', { error: String(err) });
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal error');
     });
     return;
   }

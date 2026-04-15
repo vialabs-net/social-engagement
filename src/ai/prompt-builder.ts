@@ -241,11 +241,14 @@ export function buildIndustryContextBlock(input: IndustryContextPromptInput): st
     'The author is speaking from their own code and judgment. Do not imply they read the matched article.',
     'Only use this if it reinforces a point already present in the commit and findings.',
     'Keep it subordinate to the main argument. If removed, the post should still work.',
-    'Use language of convergence, not derivation.',
     `Shared pattern: ${input.connection}`,
-    'Prefer lines like "this kind of tradeoff is showing up more and more in engineering conversations" or "this sits in the same broader shift other teams are moving toward."',
+    'Use this pattern to position the author\'s specific decision within the broader industry movement.',
+    'Be specific: name the pattern, say who else is navigating it (teams, companies, the field in general), and surface what is distinct or notable about how the author approached it.',
+    'The goal is not to say "others do this too" — it is to show why this particular implementation choice is interesting given what the industry is wrestling with.',
+    'Ask implicitly: who is dealing with this? are they solving it the same way? what is different here and why does that matter?',
     'Never mention the article title.',
     'Never write "according to", "as this article explains", "after reading", or "inspired by".',
+    'Never use filler phrases like "more and more teams are doing this" without specifying the pattern and the tension it resolves.',
   ];
 
   if (sourceFamily) {

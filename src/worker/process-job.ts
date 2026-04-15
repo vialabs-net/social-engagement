@@ -58,6 +58,7 @@ export interface ProcessJobDeps {
   readonly supabaseServiceKey: string;
   readonly anthropicApiKey: string;
   readonly openaiApiKey?: string;
+  readonly appBaseUrl: string;
 }
 
 const MATCHER_MAX_TOKENS = 400;
@@ -198,7 +199,6 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     const voiceProfile = mergeVoiceProfile(storedVoiceProfile?.voice);
     const hasBootstrap = (voiceProfile.bootstrap_posts?.length ?? 0) > 0;
     const uniquePublished = authorLogin ? await storage.countUniquePublished(authorLogin) : 0;
-    const voiceStage = computeVoiceStage(uniquePublished, hasBootstrap);
     const todayDrafts = authorLogin
       ? (await storage.getDraftsSince(authorLogin, dayStartIso)).map(toTodayDraftState)
       : [];
@@ -250,12 +250,16 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       }
     }
 
+    // Recompute after member bootstrap is known — member bootstrap counts toward stage
+    const effectiveHasBootstrap = hasBootstrap || memberBootstrapPosts.length > 0;
+    const effectiveVoiceStage = computeVoiceStage(uniquePublished, effectiveHasBootstrap);
+
     const state: AuthorGenerationState = {
       authorLogin,
       voiceProfile,
-      hasBootstrap,
+      hasBootstrap: effectiveHasBootstrap,
       uniquePublished,
-      voiceStage,
+      voiceStage: effectiveVoiceStage,
       todayDrafts,
       memberLinkedinToken,
       memberLinkedinMemberId,
@@ -601,7 +605,8 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
           );
           if (publishResult) {
-            await notifyNewDraft(github, owner, repo, candidate.commit, [publishResult]);
+            const notificationRepo = config.github.notification_repo ?? repo;
+            await notifyNewDraft(github, owner, notificationRepo, candidate.commit, [publishResult], deps.appBaseUrl);
           }
         } else {
           logger.info('worker.commit.buffer_skipped', { sha: candidate.commit.sha, reason: 'no buffer token' });

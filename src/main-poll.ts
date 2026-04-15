@@ -313,7 +313,7 @@ async function main(): Promise<void> {
         );
 
         if (publishResult) {
-          await notifyNewDraft(github, candidate.owner, candidate.repoName, candidate.commit, [publishResult]);
+          await notifyNewDraft(github, candidate.owner, candidate.repoName, candidate.commit, [publishResult], process.env['APP_BASE_URL'] ?? '');
         }
 
         logger.info('poll.commit.done', { sha: candidate.commit.sha });
