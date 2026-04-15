@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { MODULE_REGISTRY } from '../../analysis/modules/index.js';
 import { DEFAULT_VOICE_PROFILE, VoiceProfileSchema, type VoiceProfile } from '../../config/schema.js';
-import { sealTenantSecrets } from '../../security/tenant-secrets.js';
+import { sealTenantSecrets, resolveTenantSecrets } from '../../security/tenant-secrets.js';
 import { logger } from '../../utils/logger.js';
 import { mergeVoiceProfile } from '../../voice/profile-utils.js';
 import { BufferClient } from '../../buffer/client.js';
@@ -341,7 +341,7 @@ export async function handleOnboardPost(
 
   const { data: tenantData, error: fetchError } = await db
     .from('tenants')
-    .select('id, config, encrypted_dek')
+    .select('id, config, encrypted_dek, buffer_access_token')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -349,7 +349,7 @@ export async function handleOnboardPost(
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=not_found` };
   }
 
-  const tenant = tenantData as { id: string; config: Record<string, unknown>; encrypted_dek: string | null };
+  const tenant = tenantData as { id: string; config: Record<string, unknown>; encrypted_dek: string | null; buffer_access_token: string | null };
   const existingConfig = tenant.config;
 
   const updatedConfig: Record<string, unknown> = {
@@ -371,13 +371,23 @@ export async function handleOnboardPost(
     active: true,
   };
 
-  if (bufferToken && !bufferToken.includes('••')) {
-    const effectiveOrgId = bufferOrgId
-      || ((existingConfig['buffer'] as Record<string, unknown> | undefined)?.['organization_id'] as string | undefined)
-      || '';
-    if (effectiveOrgId) {
+  const isNewToken = !!(bufferToken && !bufferToken.includes('••'));
+  const effectiveOrgId = bufferOrgId
+    || ((existingConfig['buffer'] as Record<string, unknown> | undefined)?.['organization_id'] as string | undefined)
+    || '';
+
+  // Auto-discover LinkedIn channel ID when we have any usable token + an org ID.
+  // Runs on new token OR on org ID change using the existing stored token.
+  if (effectiveOrgId) {
+    let rawTokenForDiscovery: string | null = null;
+    if (isNewToken) {
+      rawTokenForDiscovery = bufferToken;
+    } else if (tenant.buffer_access_token) {
+      rawTokenForDiscovery = (await resolveTenantSecrets(tenant).catch(() => null))?.bufferAccessToken ?? null;
+    }
+    if (rawTokenForDiscovery) {
       try {
-        const bufferClient = new BufferClient(bufferToken);
+        const bufferClient = new BufferClient(rawTokenForDiscovery);
         const linkedInChannelId = await bufferClient.getLinkedInChannelId(effectiveOrgId);
         if (linkedInChannelId) {
           const existingPlatforms = (existingConfig['platforms'] as Record<string, unknown> | undefined) ?? {};
@@ -392,7 +402,9 @@ export async function handleOnboardPost(
         logger.warn('onboard.linkedin_channel_discovery_failed', { installationId, error: String(err) });
       }
     }
+  }
 
+  if (isNewToken) {
     try {
       const sealed = await sealTenantSecrets(
         { bufferAccessToken: bufferToken },
