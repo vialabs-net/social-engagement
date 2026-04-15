@@ -17,8 +17,8 @@ import { SupabaseStorage } from '../voice/supabase-storage.js';
 import { getInstallationToken } from './github-app-auth.js';
 import { logger } from '../utils/logger.js';
 import { ConfigSchema } from '../config/schema.js';
-import type { Config, VoiceProfile } from '../config/schema.js';
-import type { SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
+import type { BootstrapPost, Config, VoiceProfile } from '../config/schema.js';
+import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
 import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 import { filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
 import { computeVoiceStage } from '../voice/stage.js';
@@ -75,6 +75,8 @@ interface AuthorGenerationState {
   readonly memberLinkedinToken: string | null;
   readonly memberLinkedinMemberId: string | null;
   readonly memberBufferToken: string | null;
+  // Per-member bootstrap posts — empty means fall back to voiceProfile.bootstrap_posts
+  readonly memberBootstrapPosts: BootstrapPost[];
 }
 
 interface CommitCandidate extends RankedCommitCandidate {
@@ -205,12 +207,13 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     let memberLinkedinToken: string | null = null;
     let memberLinkedinMemberId: string | null = null;
     let memberBufferToken: string | null = null;
+    let memberBootstrapPosts: BootstrapPost[] = [];
 
     if (authorLogin) {
       try {
         const { data: memberRow, error: memberError } = await deps.db
           .from('tenant_members')
-          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, encrypted_dek')
+          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, encrypted_dek, voice_bootstrap')
           .eq('tenant_id', tenant.id)
           .eq('github_author_login', authorLogin)
           .maybeSingle();
@@ -221,6 +224,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             linkedin_member_id: string | null;
             buffer_access_token: string | null;
             encrypted_dek: string | null;
+            voice_bootstrap: string | null;
           };
           const memberSecrets = await resolveTenantSecrets({
             encrypted_dek: row.encrypted_dek,
@@ -230,6 +234,15 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           memberLinkedinToken = memberSecrets.linkedinAccessToken;
           memberBufferToken = memberSecrets.bufferAccessToken;
           memberLinkedinMemberId = row.linkedin_member_id;
+
+          try {
+            const raw = JSON.parse(row.voice_bootstrap ?? '[]') as string[];
+            memberBootstrapPosts = raw
+              .filter((t) => typeof t === 'string' && t.trim().length > 0)
+              .map((text) => ({ text, pasted_at: new Date().toISOString() }));
+          } catch {
+            // Non-fatal: leave memberBootstrapPosts empty, fall back to org defaults
+          }
         }
       } catch (err) {
         logger.warn('worker.author.member_secrets_failed', { authorLogin, error: String(err) });
@@ -247,6 +260,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       memberLinkedinToken,
       memberLinkedinMemberId,
       memberBufferToken,
+      memberBootstrapPosts,
     };
     authorStates.set(authorKey, state);
     return { authorKey, state };
@@ -532,7 +546,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             voiceProfile: candidate.voiceProfile,
             voiceStage: authorState.voiceStage,
             exposurePool,
-            bootstrapPosts: candidate.voiceProfile.bootstrap_posts ?? [],
+            bootstrapPosts: authorState.memberBootstrapPosts.length > 0
+              ? authorState.memberBootstrapPosts
+              : candidate.voiceProfile.bootstrap_posts ?? [],
             recentModuleIds,
             chapterContext,
             industryContext,
