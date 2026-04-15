@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { shouldProbeContext } from '../worker/process-job.js';
+import type { SupabaseStorage } from '../voice/supabase-storage.js';
 
-function makeStorage(count: number) {
+function makeStorage(count: number): SupabaseStorage {
   return {
     countDraftsSince: async (_authorLogin: string, _since: string) => count,
-  };
+  } as unknown as SupabaseStorage;
 }
 
 const DAY_START = '2026-04-14T00:00:00.000Z';

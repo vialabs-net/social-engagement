@@ -18,7 +18,7 @@ import { getInstallationToken } from './github-app-auth.js';
 import { logger } from '../utils/logger.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config, VoiceProfile } from '../config/schema.js';
-import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
+import type { SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
 import { resolveTenantSecrets } from '../security/tenant-secrets.js';
 import { filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
 import { computeVoiceStage } from '../voice/stage.js';
@@ -429,12 +429,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         if (candidate.authorLogin && authorState.voiceStage !== 'cold') {
           const poolIds = candidate.voiceProfile.voice_examples_pool?.['linkedin'];
           if (poolIds?.length) {
-            const { data, error } = await deps.db
-              .from('voice_posts')
-              .select('*')
-              .eq('tenant_id', tenant.id)
-              .in('id', poolIds);
-            if (!error) exposurePool = (data ?? []) as typeof exposurePool;
+            exposurePool = await fetchExposurePool(deps.db, tenant.id, poolIds);
           }
           if (exposurePool.length === 0) {
             exposurePool = await storage.getPublishedForExposure(candidate.authorLogin, 'linkedin');
@@ -619,7 +614,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 }
 
 export async function shouldProbeContext(
-  storage: Pick<IVoiceStorage, 'countDraftsSince'>,
+  storage: SupabaseStorage,
   authorLogin: string | null,
   dayStartIso: string,
 ): Promise<boolean> {
@@ -628,6 +623,20 @@ export async function shouldProbeContext(
   // Probe on the first draft of the day. Previous condition (% 5 === 4) never
   // fired because max_daily_posts_per_author defaults to 2.
   return draftsToday === 1;
+}
+
+export async function fetchExposurePool(
+  db: SupabaseClient,
+  tenantId: string,
+  poolIds: string[],
+): Promise<VoicePost[]> {
+  const { data, error } = await db
+    .from('voice_posts')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .in('id', poolIds);
+  if (error) return [];
+  return (data ?? []) as VoicePost[];
 }
 
 function toTodayDraftState(post: Pick<VoicePost, 'created_at' | 'opening_move' | 'top_module_id'>): TodayDraftState {
