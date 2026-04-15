@@ -4,6 +4,7 @@ import { DEFAULT_VOICE_PROFILE, VoiceProfileSchema, type VoiceProfile } from '..
 import { sealTenantSecrets } from '../../security/tenant-secrets.js';
 import { logger } from '../../utils/logger.js';
 import { mergeVoiceProfile } from '../../voice/profile-utils.js';
+import { BufferClient } from '../../buffer/client.js';
 
 interface TenantRow {
   readonly id: string;
@@ -57,7 +58,6 @@ function html(
   const cfg = tenant.config;
   const author = (cfg['author'] as Record<string, unknown> | undefined) ?? {};
   const buffer = (cfg['buffer'] as Record<string, unknown> | undefined) ?? {};
-
   const name = (author['name'] as string | undefined) ?? tenant.github_username;
   const website = (author['website'] as string | undefined) ?? '';
   const bufferOrgId = (buffer['organization_id'] as string | undefined) ?? '';
@@ -372,6 +372,27 @@ export async function handleOnboardPost(
   };
 
   if (bufferToken && !bufferToken.includes('••')) {
+    const effectiveOrgId = bufferOrgId
+      || ((existingConfig['buffer'] as Record<string, unknown> | undefined)?.['organization_id'] as string | undefined)
+      || '';
+    if (effectiveOrgId) {
+      try {
+        const bufferClient = new BufferClient(bufferToken);
+        const linkedInChannelId = await bufferClient.getLinkedInChannelId(effectiveOrgId);
+        if (linkedInChannelId) {
+          const existingPlatforms = (existingConfig['platforms'] as Record<string, unknown> | undefined) ?? {};
+          const existingLinkedin = (existingPlatforms['linkedin'] as Record<string, unknown> | undefined) ?? {};
+          updatedConfig['platforms'] = {
+            ...existingPlatforms,
+            linkedin: { ...existingLinkedin, buffer_profile_id: linkedInChannelId },
+          };
+          logger.info('onboard.linkedin_channel_discovered', { installationId, linkedInChannelId });
+        }
+      } catch (err) {
+        logger.warn('onboard.linkedin_channel_discovery_failed', { installationId, error: String(err) });
+      }
+    }
+
     try {
       const sealed = await sealTenantSecrets(
         { bufferAccessToken: bufferToken },

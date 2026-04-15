@@ -91,6 +91,20 @@ export class BufferClient {
 
   // ─── Queries (read-only, for voice loop) ──────────────────────────────────
 
+  async getLinkedInChannelId(orgId: string): Promise<string | null> {
+    const data = await this.graphqlRequest<{
+      channels?: Array<{ id: string; service: string }>;
+    }>(
+      `query GetChannels($input: ChannelsInput!) {
+        channels(input: $input) { id service }
+      }`,
+      { input: { organizationId: orgId } },
+      'buffer.getChannels',
+    );
+
+    return data.channels?.find((ch) => ch.service === 'linkedin')?.id ?? null;
+  }
+
   async getSentPosts(orgId: string, channelId: string): Promise<BufferPost[]> {
     const data = await this.graphqlRequest<{
       posts?: { edges?: Array<{ node: BufferPost }> };
