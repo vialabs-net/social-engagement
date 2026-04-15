@@ -289,7 +289,7 @@ const server = createServer((req, res) => {
     (async () => {
       const { data, error } = await db
         .from('voice_posts')
-        .update({ rejection_reason: reason })
+        .update({ rejection_reason: reason, status: 'expired' })
         .eq('id', draftId)
         .select('id')
         .maybeSingle();
