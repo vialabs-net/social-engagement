@@ -199,7 +199,6 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     const voiceProfile = mergeVoiceProfile(storedVoiceProfile?.voice);
     const hasBootstrap = (voiceProfile.bootstrap_posts?.length ?? 0) > 0;
     const uniquePublished = authorLogin ? await storage.countUniquePublished(authorLogin) : 0;
-    const voiceStage = computeVoiceStage(uniquePublished, hasBootstrap);
     const todayDrafts = authorLogin
       ? (await storage.getDraftsSince(authorLogin, dayStartIso)).map(toTodayDraftState)
       : [];
@@ -606,7 +605,8 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
           );
           if (publishResult) {
-            await notifyNewDraft(github, owner, repo, candidate.commit, [publishResult], deps.appBaseUrl);
+            const notificationRepo = config.github.notification_repo ?? repo;
+            await notifyNewDraft(github, owner, notificationRepo, candidate.commit, [publishResult], deps.appBaseUrl);
           }
         } else {
           logger.info('worker.commit.buffer_skipped', { sha: candidate.commit.sha, reason: 'no buffer token' });

@@ -58,9 +58,11 @@ function html(
   const cfg = tenant.config;
   const author = (cfg['author'] as Record<string, unknown> | undefined) ?? {};
   const buffer = (cfg['buffer'] as Record<string, unknown> | undefined) ?? {};
+  const github = (cfg['github'] as Record<string, unknown> | undefined) ?? {};
   const name = (author['name'] as string | undefined) ?? tenant.github_username;
   const website = (author['website'] as string | undefined) ?? '';
   const bufferOrgId = (buffer['organization_id'] as string | undefined) ?? '';
+  const notificationRepo = (github['notification_repo'] as string | undefined) ?? '';
   let voiceParts: string[] = [];
   try {
     voiceParts = JSON.parse(tenant.voice_bootstrap ?? '[]') as string[];
@@ -169,6 +171,9 @@ function html(
         <input type="text" name="name" value="${escapeHtml(name)}" placeholder="Your Name" required>
         <label>Website <span class="optional">optional</span></label>
         <input type="url" name="website" value="${escapeHtml(website)}" placeholder="https://yoursite.com">
+        <label>Notification repo <span class="optional">optional</span></label>
+        <input type="text" name="notification_repo" value="${escapeHtml(notificationRepo)}" placeholder="my-repo">
+        <p class="hint">GitHub repo where draft notifications are posted as issues. Defaults to the commit's repo if blank.</p>
       </div>
 
       <div class="card">
@@ -328,6 +333,7 @@ export async function handleOnboardPost(
   const website = params.get('website')?.trim() ?? '';
   const bufferToken = params.get('buffer_access_token')?.trim() ?? '';
   const bufferOrgId = params.get('buffer_org_id')?.trim() ?? '';
+  const notificationRepo = params.get('notification_repo')?.trim() ?? '';
   const voice1 = params.get('voice_1')?.trim() ?? '';
   const voice2 = params.get('voice_2')?.trim() ?? '';
   const voice3 = params.get('voice_3')?.trim() ?? '';
@@ -362,6 +368,10 @@ export async function handleOnboardPost(
     buffer: {
       ...((existingConfig['buffer'] as Record<string, unknown> | undefined) ?? {}),
       ...(bufferOrgId && { organization_id: bufferOrgId }),
+    },
+    github: {
+      ...((existingConfig['github'] as Record<string, unknown> | undefined) ?? {}),
+      ...(notificationRepo && { notification_repo: notificationRepo }),
     },
   };
 
