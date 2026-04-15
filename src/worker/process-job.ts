@@ -251,12 +251,16 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       }
     }
 
+    // Recompute after member bootstrap is known — member bootstrap counts toward stage
+    const effectiveHasBootstrap = hasBootstrap || memberBootstrapPosts.length > 0;
+    const effectiveVoiceStage = computeVoiceStage(uniquePublished, effectiveHasBootstrap);
+
     const state: AuthorGenerationState = {
       authorLogin,
       voiceProfile,
-      hasBootstrap,
+      hasBootstrap: effectiveHasBootstrap,
       uniquePublished,
-      voiceStage,
+      voiceStage: effectiveVoiceStage,
       todayDrafts,
       memberLinkedinToken,
       memberLinkedinMemberId,

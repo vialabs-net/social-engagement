@@ -212,6 +212,7 @@ const server = createServer((req, res) => {
       .then(({ status, body, contentType }) => {
         if (status === 302) {
           res.writeHead(302, { Location: `/member/onboard?installation_id=${installationId}&error=invalid_token` });
+          res.end();
         } else {
           res.writeHead(status, { 'Content-Type': contentType });
           res.end(body);
