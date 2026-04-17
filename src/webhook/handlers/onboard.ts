@@ -79,13 +79,6 @@ function html(
   const voice4 = voiceParts[3] ?? '';
   const voice5 = voiceParts[4] ?? '';
 
-  const linkedinConnected = !!tenant.linkedin_member_id;
-  const linkedinSection = linkedinConnected
-    ? `<div class="connected"><span class="dot"></span>LinkedIn connected</div>
-       <a href="/auth/linkedin?installation_id=${installationId}" class="link-small">Reconnect</a>`
-    : `<a href="/auth/linkedin?installation_id=${installationId}" class="btn-linkedin">Connect LinkedIn</a>
-       <p class="hint-card">Allows devcast to post directly to your LinkedIn feed.</p>`;
-
   const banner = saved
     ? `<div class="banner"><span class="dot"></span>Saved successfully.</div>`
     : '';
@@ -129,11 +122,7 @@ function html(
     .hint-card{font-size:.75rem;color:#52525b;margin-top:10px}
     .btn-primary{background:#fff;color:#09090b;border:none;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s}
     .btn-primary:hover{background:#e4e4e7}
-    .btn-linkedin{display:inline-flex;align-items:center;gap:8px;background:#0077B5;color:#fff;padding:9px 20px;border-radius:8px;font-size:.875rem;font-weight:500;text-decoration:none;transition:background .15s}
-    .btn-linkedin:hover{background:#005f8e}
     .connected{display:inline-flex;align-items:center;gap:6px;color:#34d399;font-size:.875rem;font-weight:500}
-    .link-small{font-size:.8rem;color:#52525b;text-decoration:none;margin-left:12px;transition:color .15s}
-    .link-small:hover{color:#a1a1aa}
     .module-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0 16px}
     .check-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #27272a;border-radius:10px;background:#09090b;color:#d4d4d8}
     .check-card input{margin:0}
@@ -266,10 +255,6 @@ function html(
       <button type="submit" class="btn-primary">Save</button>
     </form>
 
-    <div class="card" style="margin-top:16px">
-      <div class="section-title">LinkedIn</div>
-      ${linkedinSection}
-    </div>
   </main>
 </body>
 </html>`;
@@ -547,10 +532,6 @@ async function loadDefaultVoiceProfile(db: SupabaseClient, tenantId: string): Pr
   const row = data as VoiceProfileRow;
   const parsed = VoiceProfileSchema.safeParse(row.voice);
   return mergeVoiceProfile(parsed.success ? parsed.data : null);
-}
-
-function buildVoiceProfileFromForm(params: URLSearchParams): VoiceProfile {
-  return buildVoiceProfileFromFormWithExisting(params, DEFAULT_VOICE_PROFILE);
 }
 
 function buildVoiceProfileFromFormWithExisting(params: URLSearchParams, existingProfile: VoiceProfile): VoiceProfile {
