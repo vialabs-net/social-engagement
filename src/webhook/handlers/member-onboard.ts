@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sealTenantSecrets } from '../../security/tenant-secrets.js';
+import { BufferClient } from '../../buffer/client.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -112,7 +113,7 @@ function htmlForm(
   login: string,
   memberToken: string,
   orgName: string,
-  existing: { bufferConfigured: boolean; linkedinConnected: boolean; bootstrapPosts: string[] },
+  existing: { bufferConfigured: boolean; bufferOrgId: string; linkedinConnected: boolean; bootstrapPosts: string[] },
   saved: boolean,
   linkedinClientId: string,
   appBaseUrl: string,
@@ -182,6 +183,9 @@ function htmlForm(
         <label>API key</label>
         <input type="text" name="buffer_access_token" value="${maskToken(existing.bufferConfigured ? 'set' : null)}" placeholder="Paste your personal Buffer API key">
         <p class="hint">Get it at publish.buffer.com → Settings → API. Leave blank to use the organization token.</p>
+        <label>Organization ID <span style="color:#52525b;font-weight:400">optional</span></label>
+        <input type="text" name="buffer_org_id" value="${escapeHtml(existing.bufferOrgId)}" placeholder="org_...">
+        <p class="hint">Required if using your personal Buffer token. Found in your Buffer URL or Settings.</p>
       </div>
 
       <div class="card">
@@ -222,6 +226,8 @@ interface TenantRow {
 
 interface MemberRow {
   readonly buffer_access_token: string | null;
+  readonly buffer_org_id: string | null;
+  readonly buffer_linkedin_channel_id: string | null;
   readonly linkedin_member_id: string | null;
   readonly encrypted_dek: string | null;
   readonly voice_bootstrap: string | null;
@@ -277,7 +283,7 @@ export async function handleMemberOnboardGet(
   // Load existing member row
   const { data: memberData } = await db
     .from('tenant_members')
-    .select('buffer_access_token, linkedin_member_id, encrypted_dek, voice_bootstrap')
+    .select('buffer_access_token, buffer_org_id, buffer_linkedin_channel_id, linkedin_member_id, encrypted_dek, voice_bootstrap')
     .eq('tenant_id', tenant.id)
     .eq('github_author_login', parsed.login)
     .maybeSingle();
@@ -299,6 +305,7 @@ export async function handleMemberOnboardGet(
       tenant.github_username,
       {
         bufferConfigured: !!member?.buffer_access_token,
+        bufferOrgId: member?.buffer_org_id ?? '',
         linkedinConnected: !!member?.linkedin_member_id,
         bootstrapPosts,
       },
@@ -355,9 +362,11 @@ export async function handleMemberOnboardPost(
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-  // Buffer token — skip if placeholder or empty
   const bufferToken = params.get('buffer_access_token')?.trim() ?? '';
-  if (bufferToken && !bufferToken.includes('••')) {
+  const bufferOrgId = params.get('buffer_org_id')?.trim() ?? '';
+  const isNewToken = !!(bufferToken && !bufferToken.includes('••'));
+
+  if (isNewToken) {
     try {
       const sealed = await sealTenantSecrets({ bufferAccessToken: bufferToken }, existingDek);
       updates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
@@ -365,6 +374,24 @@ export async function handleMemberOnboardPost(
     } catch (err) {
       logger.error('member_onboard.buffer_encrypt_failed', { login, error: String(err) });
       return { status: 302, location: `/member/onboard?installation_id=${installationId}&member_token=${encodeURIComponent(memberToken)}&error=save_failed` };
+    }
+  }
+
+  if (bufferOrgId) {
+    updates['buffer_org_id'] = bufferOrgId;
+
+    // Auto-discover LinkedIn channel ID when a new token is provided with an org ID.
+    if (isNewToken) {
+      try {
+        const bufferClient = new BufferClient(bufferToken);
+        const channelId = await bufferClient.getLinkedInChannelId(bufferOrgId);
+        if (channelId) {
+          updates['buffer_linkedin_channel_id'] = channelId;
+          logger.info('member_onboard.linkedin_channel_discovered', { login, channelId });
+        }
+      } catch (err) {
+        logger.warn('member_onboard.linkedin_channel_discovery_failed', { login, error: String(err) });
+      }
     }
   }
 

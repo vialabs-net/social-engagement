@@ -10,7 +10,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger.js';
 import { BufferClient } from '../buffer/client.js';
-import { scanSentPosts } from '../buffer/sent-scanner.js';
+import { scanSentPosts, scanPlatform } from '../buffer/sent-scanner.js';
 import { SupabaseStorage } from '../voice/supabase-storage.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config } from '../config/schema.js';
@@ -32,6 +32,13 @@ interface TenantRow {
   readonly buffer_access_token: string | null;
   readonly encrypted_dek: string | null;
   readonly config: Record<string, unknown>;
+}
+
+interface DevProfileRow {
+  readonly buffer_access_token: string | null;
+  readonly buffer_org_id: string | null;
+  readonly buffer_linkedin_channel_id: string | null;
+  readonly encrypted_dek: string | null;
 }
 
 function buildConfig(tenant: TenantRow): Config {
@@ -67,8 +74,7 @@ async function main(): Promise<void> {
   const { data: tenants, error } = await db
     .from('tenants')
     .select('id, github_username, buffer_access_token, encrypted_dek, config')
-    .eq('active', true)
-    .not('buffer_access_token', 'is', null);
+    .eq('active', true);
 
   if (error) {
     logger.error('scanner.fetch_tenants_error', { error: error.message });
@@ -86,13 +92,50 @@ async function main(): Promise<void> {
       const config = buildConfig(tenant);
       const secrets = await resolveTenantSecrets(tenant);
       const storage = new SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, tenant.id);
-      if (!secrets.bufferAccessToken) {
-        logger.warn('scanner.tenant.skip_missing_buffer_token', { tenantId: tenant.id, username: tenant.github_username });
-        continue;
-      }
-      const bufferClient = new BufferClient(secrets.bufferAccessToken);
 
-      await scanSentPosts(bufferClient, storage, config);
+      // Org-level scan — only runs when the tenant has its own Buffer configured.
+      if (secrets.bufferAccessToken) {
+        const bufferClient = new BufferClient(secrets.bufferAccessToken);
+        await scanSentPosts(bufferClient, storage, config);
+      }
+
+      // Scan each active author's personal Buffer via developer_profiles.
+      // This is the primary path: one-time configuration, works cross-tenant.
+      const activeAuthors = await storage.listActiveAuthors(30);
+      for (const authorLogin of activeAuthors) {
+        try {
+          const { data: devProfile } = await db
+            .from('developer_profiles')
+            .select('buffer_access_token, buffer_org_id, buffer_linkedin_channel_id, encrypted_dek')
+            .eq('github_login', authorLogin)
+            .not('buffer_org_id', 'is', null)
+            .not('buffer_linkedin_channel_id', 'is', null)
+            .maybeSingle();
+
+          if (!devProfile?.buffer_access_token) continue;
+
+          const row = devProfile as DevProfileRow;
+          const devSecrets = await resolveTenantSecrets({
+            encrypted_dek: row.encrypted_dek,
+            buffer_access_token: row.buffer_access_token,
+          });
+          if (!devSecrets.bufferAccessToken) continue;
+
+          const devClient = new BufferClient(devSecrets.bufferAccessToken);
+          await scanPlatform(
+            devClient,
+            storage,
+            'linkedin',
+            row.buffer_org_id!,
+            row.buffer_linkedin_channel_id!,
+            authorLogin,
+          );
+          logger.info('scanner.author.done', { tenantId: tenant.id, authorLogin });
+        } catch (err) {
+          logger.error('scanner.author.error', { tenantId: tenant.id, authorLogin, error: String(err) });
+        }
+      }
+
       scanned++;
       logger.info('scanner.tenant.done', { tenantId: tenant.id, username: tenant.github_username });
     } catch (err) {

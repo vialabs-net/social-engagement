@@ -51,17 +51,22 @@ export async function scanSentPosts(
   }
 }
 
-async function scanPlatform(
+export async function scanPlatform(
   bufferClient: BufferClient,
   storage: IVoiceStorage,
   platform: Platform,
   orgId: string,
   channelId: string,
+  authorLogin?: string,
 ): Promise<void> {
-  const [sentPosts, unmatched] = await Promise.all([
+  const [sentPosts, allUnmatched] = await Promise.all([
     bufferClient.getSentPosts(orgId, channelId),
     storage.getScheduledUnpublished(platform),
   ]);
+  // When scanning a member's personal Buffer, only match their own drafts.
+  const unmatched = authorLogin
+    ? allUnmatched.filter((d) => d.author_login === authorLogin)
+    : allUnmatched;
 
   if (sentPosts.length === 0 || unmatched.length === 0) {
     logger.info('sent_scanner.nothing_to_match', { platform, sentCount: sentPosts.length, draftCount: unmatched.length });

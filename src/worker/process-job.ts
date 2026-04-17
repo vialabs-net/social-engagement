@@ -76,6 +76,7 @@ interface AuthorGenerationState {
   readonly memberLinkedinToken: string | null;
   readonly memberLinkedinMemberId: string | null;
   readonly memberBufferToken: string | null;
+  readonly memberBufferOrgId: string | null;
   // Per-member bootstrap posts — empty means fall back to voiceProfile.bootstrap_posts
   readonly memberBootstrapPosts: BootstrapPost[];
 }
@@ -203,17 +204,61 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       ? (await storage.getDraftsSince(authorLogin, dayStartIso)).map(toTodayDraftState)
       : [];
 
-    // Load per-member credentials — one query per author per job, cached below
+    // Load per-author credentials.
+    // Lookup order: developer_profiles (global) → tenant_members (org override).
     let memberLinkedinToken: string | null = null;
     let memberLinkedinMemberId: string | null = null;
     let memberBufferToken: string | null = null;
+    let memberBufferOrgId: string | null = null;
     let memberBootstrapPosts: BootstrapPost[] = [];
 
     if (authorLogin) {
+      // 1. Global developer profile — configured once, applies cross-tenant.
+      try {
+        const { data: devProfile } = await deps.db
+          .from('developer_profiles')
+          .select('buffer_access_token, buffer_org_id, buffer_linkedin_channel_id, linkedin_access_token, linkedin_member_id, encrypted_dek, voice_bootstrap')
+          .eq('github_login', authorLogin)
+          .maybeSingle();
+
+        if (devProfile) {
+          const row = devProfile as {
+            buffer_access_token: string | null;
+            buffer_org_id: string | null;
+            buffer_linkedin_channel_id: string | null;
+            linkedin_access_token: string | null;
+            linkedin_member_id: string | null;
+            encrypted_dek: string | null;
+            voice_bootstrap: string | null;
+          };
+          const devSecrets = await resolveTenantSecrets({
+            encrypted_dek: row.encrypted_dek,
+            buffer_access_token: row.buffer_access_token,
+            linkedin_access_token: row.linkedin_access_token,
+          });
+          memberBufferToken = devSecrets.bufferAccessToken;
+          memberBufferOrgId = row.buffer_org_id;
+          memberLinkedinToken = devSecrets.linkedinAccessToken;
+          memberLinkedinMemberId = row.linkedin_member_id;
+
+          try {
+            const raw = JSON.parse(row.voice_bootstrap ?? '[]') as string[];
+            memberBootstrapPosts = raw
+              .filter((t) => typeof t === 'string' && t.trim().length > 0)
+              .map((text) => ({ text, pasted_at: new Date().toISOString() }));
+          } catch {
+            // Non-fatal
+          }
+        }
+      } catch (err) {
+        logger.warn('worker.author.dev_profile_failed', { authorLogin, error: String(err) });
+      }
+
+      // 2. Org-level override in tenant_members — explicit per-org config wins over global.
       try {
         const { data: memberRow, error: memberError } = await deps.db
           .from('tenant_members')
-          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, encrypted_dek, voice_bootstrap')
+          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, buffer_org_id, encrypted_dek, voice_bootstrap')
           .eq('tenant_id', tenant.id)
           .eq('github_author_login', authorLogin)
           .maybeSingle();
@@ -223,6 +268,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             linkedin_access_token: string | null;
             linkedin_member_id: string | null;
             buffer_access_token: string | null;
+            buffer_org_id: string | null;
             encrypted_dek: string | null;
             voice_bootstrap: string | null;
           };
@@ -231,22 +277,26 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             buffer_access_token: row.buffer_access_token,
             linkedin_access_token: row.linkedin_access_token,
           });
-          memberLinkedinToken = memberSecrets.linkedinAccessToken;
-          memberBufferToken = memberSecrets.bufferAccessToken;
-          memberLinkedinMemberId = row.linkedin_member_id;
+          // Override only fields explicitly set in tenant_members
+          if (memberSecrets.bufferAccessToken) memberBufferToken = memberSecrets.bufferAccessToken;
+          if (row.buffer_org_id) memberBufferOrgId = row.buffer_org_id;
+          if (memberSecrets.linkedinAccessToken) memberLinkedinToken = memberSecrets.linkedinAccessToken;
+          if (row.linkedin_member_id) memberLinkedinMemberId = row.linkedin_member_id;
 
-          try {
-            const raw = JSON.parse(row.voice_bootstrap ?? '[]') as string[];
-            memberBootstrapPosts = raw
-              .filter((t) => typeof t === 'string' && t.trim().length > 0)
-              .map((text) => ({ text, pasted_at: new Date().toISOString() }));
-          } catch {
-            // Non-fatal: leave memberBootstrapPosts empty, fall back to org defaults
+          if (row.voice_bootstrap) {
+            try {
+              const raw = JSON.parse(row.voice_bootstrap) as string[];
+              const parsed = raw
+                .filter((t) => typeof t === 'string' && t.trim().length > 0)
+                .map((text) => ({ text, pasted_at: new Date().toISOString() }));
+              if (parsed.length > 0) memberBootstrapPosts = parsed;
+            } catch {
+              // Non-fatal
+            }
           }
         }
       } catch (err) {
         logger.warn('worker.author.member_secrets_failed', { authorLogin, error: String(err) });
-        // Non-fatal: worker falls back to tenant-level credentials
       }
     }
 
@@ -264,6 +314,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       memberLinkedinToken,
       memberLinkedinMemberId,
       memberBufferToken,
+      memberBufferOrgId,
       memberBootstrapPosts,
     };
     authorStates.set(authorKey, state);
@@ -599,10 +650,11 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 
         // Create Buffer Idea — prefer member credentials, fall back to tenant
         const effectiveBufferToken = authorState.memberBufferToken ?? secrets.bufferAccessToken;
-        if (effectiveBufferToken) {
+        const effectiveBufferOrgId = authorState.memberBufferOrgId ?? config.buffer.organization_id;
+        if (effectiveBufferToken && effectiveBufferOrgId && effectiveBufferOrgId !== 'UNCONFIGURED') {
           const bufferClient = new BufferClient(effectiveBufferToken);
           const publishResult = await publishToBuffer(
-            bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
+            bufferClient, storage, config, draftId, bufferText, 'linkedin', effectiveBufferOrgId, candidate.commit.message,
           );
           if (publishResult) {
             const notificationRepo = config.github.notification_repo ?? repo;
