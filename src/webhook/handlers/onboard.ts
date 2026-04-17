@@ -347,7 +347,7 @@ export async function handleOnboardPost(
 
   const { data: tenantData, error: fetchError } = await db
     .from('tenants')
-    .select('id, config, encrypted_dek, buffer_access_token')
+    .select('id, github_username, config, encrypted_dek, buffer_access_token')
     .eq('github_installation_id', installationId)
     .single();
 
@@ -355,7 +355,7 @@ export async function handleOnboardPost(
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=not_found` };
   }
 
-  const tenant = tenantData as { id: string; config: Record<string, unknown>; encrypted_dek: string | null; buffer_access_token: string | null };
+  const tenant = tenantData as { id: string; github_username: string; config: Record<string, unknown>; encrypted_dek: string | null; buffer_access_token: string | null };
   const existingConfig = tenant.config;
 
   const updatedConfig: Record<string, unknown> = {
@@ -388,6 +388,7 @@ export async function handleOnboardPost(
 
   // Auto-discover LinkedIn channel ID when we have any usable token + an org ID.
   // Runs on new token OR on org ID change using the existing stored token.
+  let discoveredLinkedInChannelId: string | null = null;
   if (effectiveOrgId) {
     let rawTokenForDiscovery: string | null = null;
     if (isNewToken) {
@@ -398,15 +399,15 @@ export async function handleOnboardPost(
     if (rawTokenForDiscovery) {
       try {
         const bufferClient = new BufferClient(rawTokenForDiscovery);
-        const linkedInChannelId = await bufferClient.getLinkedInChannelId(effectiveOrgId);
-        if (linkedInChannelId) {
+        discoveredLinkedInChannelId = await bufferClient.getLinkedInChannelId(effectiveOrgId);
+        if (discoveredLinkedInChannelId) {
           const existingPlatforms = (existingConfig['platforms'] as Record<string, unknown> | undefined) ?? {};
           const existingLinkedin = (existingPlatforms['linkedin'] as Record<string, unknown> | undefined) ?? {};
           updatedConfig['platforms'] = {
             ...existingPlatforms,
-            linkedin: { ...existingLinkedin, buffer_profile_id: linkedInChannelId },
+            linkedin: { ...existingLinkedin, buffer_profile_id: discoveredLinkedInChannelId },
           };
-          logger.info('onboard.linkedin_channel_discovered', { installationId, linkedInChannelId });
+          logger.info('onboard.linkedin_channel_discovered', { installationId, linkedInChannelId: discoveredLinkedInChannelId });
         }
       } catch (err) {
         logger.warn('onboard.linkedin_channel_discovery_failed', { installationId, error: String(err) });
@@ -436,6 +437,44 @@ export async function handleOnboardPost(
   if (updateError) {
     logger.error('onboard.save_failed', { installationId, error: updateError.message });
     return { status: 302, location: `/onboard?installation_id=${installationId}&error=save_failed` };
+  }
+
+  // Upsert developer_profiles so this developer's Buffer config is available
+  // cross-tenant. Non-fatal: a failure here does not roll back the tenant save.
+  try {
+    const { data: existingProfile } = await db
+      .from('developer_profiles')
+      .select('encrypted_dek')
+      .eq('github_login', tenant.github_username)
+      .maybeSingle();
+
+    const existingProfileDek = (existingProfile as { encrypted_dek: string | null } | null)?.encrypted_dek ?? null;
+    const profileUpdates: Record<string, unknown> = {
+      github_login: tenant.github_username,
+      voice_bootstrap: voiceBootstrap,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (effectiveOrgId) profileUpdates['buffer_org_id'] = effectiveOrgId;
+    if (discoveredLinkedInChannelId) profileUpdates['buffer_linkedin_channel_id'] = discoveredLinkedInChannelId;
+
+    if (isNewToken) {
+      const sealed = await sealTenantSecrets({ bufferAccessToken: bufferToken }, existingProfileDek);
+      profileUpdates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
+      profileUpdates['encrypted_dek'] = sealed.encryptedDek;
+    }
+
+    const { error: profileError } = await db
+      .from('developer_profiles')
+      .upsert(profileUpdates, { onConflict: 'github_login' });
+
+    if (profileError) {
+      logger.warn('onboard.developer_profile_upsert_failed', { installationId, login: tenant.github_username, error: profileError.message });
+    } else {
+      logger.info('onboard.developer_profile_saved', { installationId, login: tenant.github_username });
+    }
+  } catch (err) {
+    logger.warn('onboard.developer_profile_upsert_error', { installationId, error: String(err) });
   }
 
   const { data: voiceRow, error: voiceFetchError } = await db
