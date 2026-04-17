@@ -447,6 +447,15 @@ export async function handleOnboardPost(
       const sealed = await sealTenantSecrets({ bufferAccessToken: bufferToken }, existingProfileDek);
       profileUpdates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
       profileUpdates['encrypted_dek'] = sealed.encryptedDek;
+    } else if (!existingProfileDek && tenant.buffer_access_token) {
+      // Profile has no token yet but tenant already has one — copy it across.
+      // Happens when the user submits onboard without re-entering the masked token.
+      const resolved = await resolveTenantSecrets(tenant).catch(() => null);
+      if (resolved?.bufferAccessToken) {
+        const sealed = await sealTenantSecrets({ bufferAccessToken: resolved.bufferAccessToken }, null);
+        profileUpdates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
+        profileUpdates['encrypted_dek'] = sealed.encryptedDek;
+      }
     }
 
     const { error: profileError } = await db
