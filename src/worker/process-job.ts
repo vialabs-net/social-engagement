@@ -651,7 +651,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         // Create Buffer Idea — prefer member credentials, fall back to tenant
         const effectiveBufferToken = authorState.memberBufferToken ?? secrets.bufferAccessToken;
         const effectiveBufferOrgId = authorState.memberBufferOrgId ?? config.buffer.organization_id;
-        if (effectiveBufferToken) {
+        if (effectiveBufferToken && effectiveBufferOrgId && effectiveBufferOrgId !== 'UNCONFIGURED') {
           const bufferClient = new BufferClient(effectiveBufferToken);
           const publishResult = await publishToBuffer(
             bufferClient, storage, config, draftId, bufferText, 'linkedin', effectiveBufferOrgId, candidate.commit.message,
