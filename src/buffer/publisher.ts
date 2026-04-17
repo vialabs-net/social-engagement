@@ -21,9 +21,9 @@ export async function publishToBuffer(
   draftId: string,
   text: string,
   platform: Platform,
+  orgId: string,
   commitMessage?: string,
 ): Promise<PublishResult | null> {
-  const orgId = config.buffer.organization_id;
   const title = commitMessage ? commitMessage.slice(0, 80) : draftId.slice(0, 8);
 
   const { id: bufferIdeaId } = await bufferClient.createIdea(orgId, title, text);
