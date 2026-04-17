@@ -10,7 +10,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger.js';
 import { BufferClient } from '../buffer/client.js';
-import { scanSentPosts } from '../buffer/sent-scanner.js';
+import { scanSentPosts, scanPlatform } from '../buffer/sent-scanner.js';
 import { SupabaseStorage } from '../voice/supabase-storage.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { Config } from '../config/schema.js';
@@ -32,6 +32,14 @@ interface TenantRow {
   readonly buffer_access_token: string | null;
   readonly encrypted_dek: string | null;
   readonly config: Record<string, unknown>;
+}
+
+interface MemberScanRow {
+  readonly github_author_login: string;
+  readonly buffer_access_token: string | null;
+  readonly buffer_org_id: string | null;
+  readonly buffer_linkedin_channel_id: string | null;
+  readonly encrypted_dek: string | null;
 }
 
 function buildConfig(tenant: TenantRow): Config {
@@ -93,6 +101,43 @@ async function main(): Promise<void> {
       const bufferClient = new BufferClient(secrets.bufferAccessToken);
 
       await scanSentPosts(bufferClient, storage, config);
+
+      // Scan each member's personal Buffer when they have their own org ID configured.
+      const { data: memberRows } = await db
+        .from('tenant_members')
+        .select('github_author_login, buffer_access_token, buffer_org_id, buffer_linkedin_channel_id, encrypted_dek')
+        .eq('tenant_id', tenant.id)
+        .not('buffer_org_id', 'is', null)
+        .not('buffer_linkedin_channel_id', 'is', null);
+
+      for (const raw of (memberRows ?? []) as MemberScanRow[]) {
+        if (!raw.buffer_access_token) continue;
+        try {
+          const memberSecrets = await resolveTenantSecrets({
+            encrypted_dek: raw.encrypted_dek,
+            buffer_access_token: raw.buffer_access_token,
+          });
+          if (!memberSecrets.bufferAccessToken) continue;
+
+          const memberClient = new BufferClient(memberSecrets.bufferAccessToken);
+          await scanPlatform(
+            memberClient,
+            storage,
+            'linkedin',
+            raw.buffer_org_id!,
+            raw.buffer_linkedin_channel_id!,
+            raw.github_author_login,
+          );
+          logger.info('scanner.member.done', { tenantId: tenant.id, authorLogin: raw.github_author_login });
+        } catch (err) {
+          logger.error('scanner.member.error', {
+            tenantId: tenant.id,
+            authorLogin: raw.github_author_login,
+            error: String(err),
+          });
+        }
+      }
+
       scanned++;
       logger.info('scanner.tenant.done', { tenantId: tenant.id, username: tenant.github_username });
     } catch (err) {
