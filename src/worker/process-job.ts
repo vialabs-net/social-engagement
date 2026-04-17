@@ -76,6 +76,7 @@ interface AuthorGenerationState {
   readonly memberLinkedinToken: string | null;
   readonly memberLinkedinMemberId: string | null;
   readonly memberBufferToken: string | null;
+  readonly memberBufferOrgId: string | null;
   // Per-member bootstrap posts — empty means fall back to voiceProfile.bootstrap_posts
   readonly memberBootstrapPosts: BootstrapPost[];
 }
@@ -207,13 +208,14 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     let memberLinkedinToken: string | null = null;
     let memberLinkedinMemberId: string | null = null;
     let memberBufferToken: string | null = null;
+    let memberBufferOrgId: string | null = null;
     let memberBootstrapPosts: BootstrapPost[] = [];
 
     if (authorLogin) {
       try {
         const { data: memberRow, error: memberError } = await deps.db
           .from('tenant_members')
-          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, encrypted_dek, voice_bootstrap')
+          .select('linkedin_access_token, linkedin_member_id, buffer_access_token, buffer_org_id, encrypted_dek, voice_bootstrap')
           .eq('tenant_id', tenant.id)
           .eq('github_author_login', authorLogin)
           .maybeSingle();
@@ -223,6 +225,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             linkedin_access_token: string | null;
             linkedin_member_id: string | null;
             buffer_access_token: string | null;
+            buffer_org_id: string | null;
             encrypted_dek: string | null;
             voice_bootstrap: string | null;
           };
@@ -234,6 +237,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           memberLinkedinToken = memberSecrets.linkedinAccessToken;
           memberBufferToken = memberSecrets.bufferAccessToken;
           memberLinkedinMemberId = row.linkedin_member_id;
+          memberBufferOrgId = row.buffer_org_id;
 
           try {
             const raw = JSON.parse(row.voice_bootstrap ?? '[]') as string[];
@@ -264,6 +268,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       memberLinkedinToken,
       memberLinkedinMemberId,
       memberBufferToken,
+      memberBufferOrgId,
       memberBootstrapPosts,
     };
     authorStates.set(authorKey, state);
@@ -599,10 +604,11 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
 
         // Create Buffer Idea — prefer member credentials, fall back to tenant
         const effectiveBufferToken = authorState.memberBufferToken ?? secrets.bufferAccessToken;
+        const effectiveBufferOrgId = authorState.memberBufferOrgId ?? config.buffer.organization_id;
         if (effectiveBufferToken) {
           const bufferClient = new BufferClient(effectiveBufferToken);
           const publishResult = await publishToBuffer(
-            bufferClient, storage, config, draftId, bufferText, 'linkedin', candidate.commit.message,
+            bufferClient, storage, config, draftId, bufferText, 'linkedin', effectiveBufferOrgId, candidate.commit.message,
           );
           if (publishResult) {
             const notificationRepo = config.github.notification_repo ?? repo;
