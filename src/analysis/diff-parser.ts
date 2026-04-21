@@ -32,6 +32,41 @@ export function parseCommitFiles(rawFiles: RawFile[]): FileDiff[] {
     });
 }
 
+export function extractAddedLines(patch: string): string {
+  return patch
+    .split('\n')
+    .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+    .map((l) => l.slice(1))
+    .join('\n');
+}
+
+export function extractRemovedLines(patch: string): string {
+  return patch
+    .split('\n')
+    .filter((l) => l.startsWith('-') && !l.startsWith('---'))
+    .map((l) => l.slice(1))
+    .join('\n');
+}
+
+export function extractFirstHunkSnippet(patch: string, maxLines = 6): string {
+  const lines = patch.split('\n');
+  let inHunk = false;
+  const result: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue;
+    if (line.startsWith('\\')) continue;
+    result.push(line);
+    if (result.length >= maxLines) break;
+  }
+
+  return result.join('\n');
+}
+
 function normalizeStatus(raw: string): FileDiff['status'] {
   switch (raw) {
     case 'added':    return 'added';
