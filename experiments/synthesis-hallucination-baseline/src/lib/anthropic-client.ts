@@ -49,6 +49,39 @@ function estimateCostUsd(
          (usage.output_tokens / 1_000_000) * price.output;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function createWithRetry(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  attempt = 0,
+): Promise<Awaited<ReturnType<Anthropic['messages']['create']>>> {
+  try {
+    return await getClient().messages.create({
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+  } catch (err: unknown) {
+    const status = typeof err === 'object' && err !== null && 'status' in err
+      ? Number((err as { status: unknown }).status)
+      : 0;
+    const retryable = status === 429 || status === 529 || (status >= 500 && status < 600);
+    if (retryable && attempt < 8) {
+      const waitMs = Math.min(90_000, 2 ** attempt * 1000 + Math.random() * 500);
+      console.warn(`  [retry ${attempt + 1}/8 status=${status}] waiting ${Math.round(waitMs)}ms...`);
+      await sleep(waitMs);
+      return createWithRetry(model, system, user, maxTokens, attempt + 1);
+    }
+    throw err;
+  }
+}
+
 async function callModel(
   model: typeof HAIKU_MODEL | typeof SONNET_MODEL,
   system: string,
@@ -60,12 +93,7 @@ async function callModel(
     throw new Error(`[anthropic] cost cap reached: $${current.toFixed(4)} >= $${COST_CAP_USD}. Aborting.`);
   }
 
-  const response = await getClient().messages.create({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
+  const response = await createWithRetry(model, system, user, maxTokens);
 
   const usage = response.usage ?? { input_tokens: 0, output_tokens: 0 };
   const cost = estimateCostUsd(model, usage);
