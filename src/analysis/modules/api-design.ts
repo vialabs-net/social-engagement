@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ApiPattern {
   readonly name: string;
@@ -90,8 +91,11 @@ export class ApiDesignModule implements CodeAnalyzer {
 
       if (addedLines.length === 0) continue;
 
+      const removedText = extractRemovedLines(diff.patch);
+      const removedLines = removedText.split('\n').filter(Boolean);
+
       for (const pattern of PATTERNS) {
-        if (pattern.detect(addedLines)) {
+        if (pattern.detect(addedLines) && !pattern.detect(removedLines)) {
           return {
             moduleId: this.id,
             aspect: pattern.name,
@@ -100,6 +104,10 @@ export class ApiDesignModule implements CodeAnalyzer {
             plainLanguage: pattern.explanation,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
+            evidence: {
+              before: removedText.slice(0, 300) || undefined,
+              after: extractFirstHunkSnippet(diff.patch) || undefined,
+            },
           };
         }
       }
