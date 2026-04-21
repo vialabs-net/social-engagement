@@ -14,7 +14,18 @@ export async function refreshVoiceMoves(
   authorLogin: string,
 ): Promise<void> {
   let stored = await storage.getVoiceProfile(authorLogin);
-  const seedVoice = stored?.voice ?? DEFAULT_VOICE_PROFILE;
+  // Only seed a new author row from an exact match. Tenant-default/legacy voices
+  // belong to the tenant owner, not to this author — copying them would persist
+  // foreign hashtags, bootstrap_posts, etc. as this author's permanent voice.
+  const seedVoice = stored && stored.source === 'exact'
+    ? stored.voice
+    : DEFAULT_VOICE_PROFILE;
+  if (stored && stored.source !== 'exact') {
+    logger.info('voice.moves.seed.default', {
+      authorLogin,
+      reason: stored.source,
+    });
+  }
 
   await storage.saveVoiceProfile(authorLogin, seedVoice, 0);
   stored = await storage.getVoiceProfile(authorLogin);

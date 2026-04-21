@@ -213,6 +213,7 @@ export class SqliteStorage implements IVoiceStorage {
       return Promise.resolve({
         voice: normalizeVoiceProfile(JSON.parse(exact.voice)) ?? DEFAULT_VOICE_PROFILE,
         version: exact.version,
+        source: 'exact',
       });
     }
 
@@ -222,6 +223,7 @@ export class SqliteStorage implements IVoiceStorage {
         return Promise.resolve({
           voice: normalizeVoiceProfile(JSON.parse(fallback.voice)) ?? DEFAULT_VOICE_PROFILE,
           version: fallback.version,
+          source: 'fallback',
         });
       }
     }
@@ -617,7 +619,7 @@ export class SqliteStorage implements IVoiceStorage {
 
     const voice = normalizeVoiceProfile(config['voice']);
     if (!voice) return null;
-    return { voice, version: 1 };
+    return { voice, version: 1, source: 'legacy' };
   }
 
   private hasTable(name: string): boolean {

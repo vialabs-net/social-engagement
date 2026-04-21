@@ -122,6 +122,7 @@ export class SupabaseStorage implements IVoiceStorage {
       return {
         voice: normalizeVoiceProfile(exact.voice) ?? DEFAULT_VOICE_PROFILE,
         version: exact.version,
+        source: 'exact',
       };
     }
 
@@ -131,6 +132,7 @@ export class SupabaseStorage implements IVoiceStorage {
         return {
           voice: normalizeVoiceProfile(fallback.voice) ?? DEFAULT_VOICE_PROFILE,
           version: fallback.version,
+          source: 'fallback',
         };
       }
     }
@@ -532,7 +534,7 @@ export class SupabaseStorage implements IVoiceStorage {
     const config = (data as { config?: Record<string, unknown> | null }).config ?? {};
     const voice = normalizeVoiceProfile(config['voice']);
     if (!voice) return null;
-    return { voice, version: 1 };
+    return { voice, version: 1, source: 'legacy' };
   }
 }
 
