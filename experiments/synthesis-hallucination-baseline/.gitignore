@@ -1,0 +1,12 @@
+node_modules/
+db/experiment.db
+db/experiment.db-wal
+db/experiment.db-shm
+db/commit-cache/
+db/author-emails.json
+db/voice-profiles-cache.json
+db/resample-manifest.json
+db/preflight-report.json
+out/for-labeling/
+out/NEXT-STEP.md
+out/analysis-report.md

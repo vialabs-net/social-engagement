@@ -1,0 +1,8 @@
+{
+  "included": ["lilicurl"],
+  "excluded": [
+    { "login": "vialabs-net", "reason": "service account, not representative of Fase B use case" },
+    { "login": "korutx", "reason": "microboxlabs/modulariot not cloned locally — 0 commits in REPOS_ROOT" }
+  ],
+  "notes": "Preflight run 2026-04-21 confirmed only lilicurl has ≥1 local commit in last 120d. Re-enable authors here after cloning their repos under REPOS_ROOT."
+}
