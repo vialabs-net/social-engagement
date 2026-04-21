@@ -130,22 +130,22 @@ function detectLanguages(filenames: string[]): string[] {
 
 // Parse `git show --numstat --format= --unified=3 <sha>` output into FileDiff[].
 // Numstat gives per-file additions/deletions; we merge with the patch sections.
+// ASCII 0x1f (US) separates fields; trailing whitespace trimmed.
 export function loadCommit(localPath: string, repo: string, sha: string): CachedCommit | null {
-  const metaLine = runGitSafe(localPath, [
+  const metaRaw = runGitSafe(localPath, [
     'log',
     '-1',
-    '--format=%H%x1f%aI%x1f%an%x1f%ae%x1f%s%x1f%b%x1e',
+    '--format=%H%x1f%aI%x1f%an%x1f%ae%x1f%s%x1f%b',
     sha,
   ]);
-  if (!metaLine) return null;
-  const recordStart = metaLine.indexOf('') !== -1 ? metaLine : metaLine;
-  // ASCII 0x1f = unit separator, 0x1e = record separator
-  const trimmed = recordStart.replace(/\x1e$/, '').replace(/\x1e\s*$/, '').trim();
-  const fields = trimmed.split('\x1f');
+  if (!metaRaw) return null;
+
+  const fields = metaRaw.trimEnd().split('\x1f');
   if (fields.length < 5) return null;
-  const [shaOut, dateISO, authorName, authorEmail, subject, ...rest] = fields;
+  const [shaOut, dateISO, _authorName, authorEmail, subject, ...rest] = fields;
   if (!shaOut || !dateISO) return null;
   const body = rest.join('\x1f').trim() || null;
+  void _authorName;
 
   const numstatRaw = runGitSafe(localPath, ['show', '--numstat', '--format=', sha]);
   const patchRaw = runGitSafe(localPath, ['show', '--format=', '--unified=3', sha]);
