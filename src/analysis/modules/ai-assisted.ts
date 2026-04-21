@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 // AI SDK imports in added lines
 const AI_SDK_PATTERNS = [
@@ -37,7 +38,9 @@ export class AiAssistedModule implements CodeAnalyzer {
         .map(l => l.slice(1))
     ).join('\n');
 
-    const hasAiSdk = AI_SDK_PATTERNS.some(p => p.test(addedText));
+    const removedText = ctx.diffs.map(d => extractRemovedLines(d.patch)).join('\n');
+
+    const hasAiSdk = AI_SDK_PATTERNS.some(p => p.test(addedText)) && !AI_SDK_PATTERNS.some(p => p.test(removedText));
 
     const aiFiles = ctx.diffs.filter(d =>
       AI_FILE_PATTERNS.some(p => p.test(d.filename))
@@ -56,6 +59,7 @@ export class AiAssistedModule implements CodeAnalyzer {
                     : sdkMatch?.source.includes('langchain') ? 'LangChain'
                     : 'an AI SDK';
 
+      const sdkDiff = ctx.diffs.find(d => AI_SDK_PATTERNS.some(p => p.test(d.patch)));
       return {
         moduleId: this.id,
         aspect: 'AI SDK integration',
@@ -64,6 +68,10 @@ export class AiAssistedModule implements CodeAnalyzer {
         plainLanguage: `The commit adds ${sdkName} as a capability layer in the application. Focus on the engineering decision: where the model sits in the flow, what constraints or retries were added, what cost boundary was introduced, and what the code now enables or prevents.`,
         interestScore: 8,
         contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+        evidence: {
+          before: sdkDiff ? extractRemovedLines(sdkDiff.patch).slice(0, 300) || undefined : undefined,
+          after: sdkDiff ? extractFirstHunkSnippet(sdkDiff.patch) || undefined : undefined,
+        },
       };
     }
 
@@ -77,6 +85,10 @@ export class AiAssistedModule implements CodeAnalyzer {
         plainLanguage: 'Prompts and control surfaces are part of the product. Write about the behavior that changed: what became configurable, what guardrail was added, what failure mode was reduced, or what output became more reliable. The model is context, not the protagonist.',
         interestScore: 7,
         contextHint: `${aiFiles[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+        evidence: {
+          before: aiFiles[0] ? extractRemovedLines(aiFiles[0].patch).slice(0, 300) || undefined : undefined,
+          after: aiFiles[0] ? extractFirstHunkSnippet(aiFiles[0].patch) || undefined : undefined,
+        },
       };
     }
 
