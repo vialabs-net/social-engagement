@@ -163,6 +163,9 @@ export function buildUserPrompt(
   parts.push('<commit>');
   parts.push(`Repository: ${commit.repo}`);
   parts.push(`Message: ${commit.message}`);
+  if (commit.body.trim()) {
+    parts.push(`Body:\n${commit.body.trim().split('\n').slice(0, 5).join('\n')}`);
+  }
   parts.push(`Languages: ${commit.languages.join(', ') || 'mixed'}`);
   if (commit.authorLogin) parts.push(`Author: ${commit.authorLogin}`);
   parts.push('</commit>');
