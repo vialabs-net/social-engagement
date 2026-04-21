@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 const TEST_FILE_PATTERN = /\.(test|spec)\.(ts|tsx|js|jsx|py)$|__tests__\//;
 const PARAMETRIZED_PATTERN = /\bit\.each\b|\btest\.each\b|\bpytest\.mark\.parametrize\b|@parametrize/;
@@ -23,8 +24,10 @@ export class TestingModule implements CodeAnalyzer {
         .map(l => l.slice(1))
     ).join('\n');
 
-    const hasParametrized = PARAMETRIZED_PATTERN.test(addedText);
-    const hasEdgeCases = EDGE_CASE_KEYWORDS.test(addedText);
+    const removedText = testDiffs.map(d => extractRemovedLines(d.patch)).join('\n');
+
+    const hasParametrized = PARAMETRIZED_PATTERN.test(addedText) && !PARAMETRIZED_PATTERN.test(removedText);
+    const hasEdgeCases = EDGE_CASE_KEYWORDS.test(addedText) && !EDGE_CASE_KEYWORDS.test(removedText);
     const hasMocks = MOCK_PATTERN.test(addedText);
 
     // Count test cases (rough heuristic)
@@ -40,6 +43,10 @@ export class TestingModule implements CodeAnalyzer {
         plainLanguage: 'Parametrized tests express "for all these inputs, I expect these outputs" in one readable block. They make it explicit which specific values were chosen for testing and why — especially useful for numeric boundaries, currency rounding, and state transitions.',
         interestScore: 8,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+        evidence: {
+          before: removedText.slice(0, 300) || undefined,
+          after: extractFirstHunkSnippet(testDiffs[0]?.patch ?? '') || undefined,
+        },
       };
     }
 
@@ -54,6 +61,10 @@ export class TestingModule implements CodeAnalyzer {
         plainLanguage: `The tests specifically target the scenarios that most implementations get wrong: ${uniqueKeywords.join(', ')}. Edge cases don't throw exceptions — they produce plausible-looking wrong answers until someone checks the math.`,
         interestScore: 7,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+        evidence: {
+          before: removedText.slice(0, 300) || undefined,
+          after: extractFirstHunkSnippet(testDiffs[0]?.patch ?? '') || undefined,
+        },
       };
     }
 
@@ -66,6 +77,10 @@ export class TestingModule implements CodeAnalyzer {
         plainLanguage: `The commit expanded the test suite with ${testCount} new cases${hasMocks ? ', using mocks to isolate the unit under test from its dependencies' : ''}. More tests mean faster feedback when something breaks.`,
         interestScore: 6,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
+        evidence: {
+          before: removedText.slice(0, 300) || undefined,
+          after: extractFirstHunkSnippet(testDiffs[0]?.patch ?? '') || undefined,
+        },
       };
     }
 

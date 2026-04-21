@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ServiceSignature {
   name: string;
@@ -110,10 +111,11 @@ export class IntegrationModule implements CodeAnalyzer {
     if (addedLines.length === 0) return null;
 
     const addedText = addedLines.join('\n');
+    const removedText = ctx.diffs.map(d => extractRemovedLines(d.patch)).join('\n');
 
     for (const service of KNOWN_SERVICES) {
       if (service.category === AI_CATEGORY) continue;
-      if (service.patterns.some(p => p.test(addedText))) {
+      if (service.patterns.some(p => p.test(addedText)) && !service.patterns.some(p => p.test(removedText))) {
         const matchingDiff = ctx.diffs.find((diff) => service.patterns.some((pattern) => pattern.test(diff.patch)));
         return {
           moduleId: this.id,
@@ -124,6 +126,10 @@ export class IntegrationModule implements CodeAnalyzer {
           interestScore: service.score,
           contextHint: `${matchingDiff?.filename ?? ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
           retrievalTerms: service.retrievalTerms,
+          evidence: {
+            before: matchingDiff ? extractRemovedLines(matchingDiff.patch).slice(0, 300) || undefined : undefined,
+            after: matchingDiff ? extractFirstHunkSnippet(matchingDiff.patch) || undefined : undefined,
+          },
         };
       }
     }

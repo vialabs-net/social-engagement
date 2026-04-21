@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractAddedLines, extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface PatternSignature {
   name: string;
@@ -86,15 +87,16 @@ export class DesignPatternsModule implements CodeAnalyzer {
   readonly category = 'design_patterns' as const;
 
   async analyze(ctx: AnalysisContext): Promise<Finding | null> {
-    const addedLines = extractAddedLines(ctx.diffs);
-    if (addedLines.length === 0) return null;
+    const addedText = ctx.diffs.map(d => extractAddedLines(d.patch)).join('\n');
+    if (!addedText) return null;
 
-    const addedText = addedLines.join('\n');
+    const removedText = ctx.diffs.map(d => extractRemovedLines(d.patch)).join('\n');
     const primaryFile = ctx.diffs[0]?.filename ?? 'unknown';
 
     for (const pattern of PATTERNS) {
-      const matches = pattern.addedPatterns.filter(p => p.test(addedText));
-      if (matches.length >= pattern.minMatches) {
+      const addedMatches = pattern.addedPatterns.filter(p => p.test(addedText));
+      const removedMatches = pattern.addedPatterns.filter(p => p.test(removedText));
+      if (addedMatches.length >= pattern.minMatches && removedMatches.length < pattern.minMatches) {
         return {
           moduleId: this.id,
           aspect: `${pattern.name} pattern`,
@@ -103,22 +105,14 @@ export class DesignPatternsModule implements CodeAnalyzer {
           plainLanguage: pattern.explanation,
           interestScore: pattern.interestScore,
           contextHint: `${primaryFile} in ${ctx.repo}`,
+          evidence: {
+            before: removedText.slice(0, 300) || undefined,
+            after: extractFirstHunkSnippet(ctx.diffs[0]?.patch ?? '') || undefined,
+          },
         };
       }
     }
 
     return null;
   }
-}
-
-function extractAddedLines(diffs: { patch: string }[]): string[] {
-  const lines: string[] = [];
-  for (const diff of diffs) {
-    for (const line of diff.patch.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        lines.push(line.slice(1));
-      }
-    }
-  }
-  return lines;
 }

@@ -1,4 +1,6 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+// extractAddedLines/extractRemovedLines not imported: complexity already computes
+// a per-file delta (addedDecisions vs removedDecisions) and fires only on net change >= 3.
 
 // Decision-point keywords that contribute to cyclomatic complexity
 const DECISION_PATTERN = /\b(if|else\s+if|switch|case|for|while|do|catch|finally)\b|&&|\|\||\?[^:]/g;

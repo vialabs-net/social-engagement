@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ArchPattern {
   readonly name: string;
@@ -114,18 +115,28 @@ export class ArchitecturePatternsModule implements CodeAnalyzer {
 
       if (addedLines.length === 0) continue;
 
+      const removedText = extractRemovedLines(diff.patch);
+      const removedLines = removedText.split('\n').filter(Boolean);
+
       for (const pattern of PATTERNS) {
-        if (pattern.detect(addedLines, diff.filename, allFilenames)) {
-          return {
-            moduleId: this.id,
-            aspect: pattern.name,
-            finding: `Detected ${pattern.name} in ${diff.filename}`,
-            technicalDetail: pattern.technicalDetail,
-            plainLanguage: pattern.explanation,
-            interestScore: pattern.score,
-            contextHint: `${diff.filename} in ${ctx.repo}`,
-          };
-        }
+        if (!pattern.detect(addedLines, diff.filename, allFilenames)) continue;
+        // Filename-only patterns (detect ignores lines) always fire — skip delta guard.
+        // Line-content patterns: skip if the same pattern fires on removed lines too.
+        const firesWithoutLines = pattern.detect([], diff.filename, allFilenames);
+        if (!firesWithoutLines && pattern.detect(removedLines, diff.filename, allFilenames)) continue;
+        return {
+          moduleId: this.id,
+          aspect: pattern.name,
+          finding: `Detected ${pattern.name} in ${diff.filename}`,
+          technicalDetail: pattern.technicalDetail,
+          plainLanguage: pattern.explanation,
+          interestScore: pattern.score,
+          contextHint: `${diff.filename} in ${ctx.repo}`,
+          evidence: {
+            before: firesWithoutLines ? undefined : removedText.slice(0, 300) || undefined,
+            after: extractFirstHunkSnippet(diff.patch) || undefined,
+          },
+        };
       }
     }
 

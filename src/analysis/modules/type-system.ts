@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface TypePattern {
   name: string;
@@ -73,10 +74,12 @@ export class TypeSystemModule implements CodeAnalyzer {
 
     if (!addedText) return null;
 
+    const removedText = tsDiffs.map(d => extractRemovedLines(d.patch)).join('\n');
+
     const primaryFile = tsDiffs[0]?.filename ?? 'unknown';
 
     for (const tp of TYPE_PATTERNS) {
-      if (tp.pattern.test(addedText)) {
+      if (tp.pattern.test(addedText) && !tp.pattern.test(removedText)) {
         return {
           moduleId: this.id,
           aspect: tp.name,
@@ -85,6 +88,10 @@ export class TypeSystemModule implements CodeAnalyzer {
           plainLanguage: tp.explanation,
           interestScore: tp.score,
           contextHint: `${primaryFile} in ${ctx.repo}`,
+          evidence: {
+            before: removedText.slice(0, 300) || undefined,
+            after: extractFirstHunkSnippet(tsDiffs[0]?.patch ?? '') || undefined,
+          },
         };
       }
     }

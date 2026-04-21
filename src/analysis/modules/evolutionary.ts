@@ -1,4 +1,5 @@
 import type { CodeAnalyzer, AnalysisContext, Finding, FileDiff } from '../types.js';
+import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 const MIGRATION_REGEX = /(?:migrat|\.sql$)/i;
 const MIN_EXTRACTION_LINES = 30;
@@ -78,6 +79,8 @@ function detectMigration(ctx: AnalysisContext): Finding | null {
   };
 }
 
+const DEPRECATION_REGEX = /\b@[Dd]eprecated\b|\/\/\s*DEPRECATED|\/\*\*?\s*@deprecated/;
+
 function detectDeprecation(ctx: AnalysisContext): Finding | null {
   for (const diff of ctx.diffs) {
     if (!diff.patch || diff.status === 'removed') continue;
@@ -86,18 +89,25 @@ function detectDeprecation(ctx: AnalysisContext): Finding | null {
       .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
       .map((l) => l.slice(1));
 
-    if (addedLines.some((l) => /\b@[Dd]eprecated\b|\/\/\s*DEPRECATED|\/\*\*?\s*@deprecated/.test(l))) {
-      return {
-        moduleId: 'evolutionary',
-        aspect: 'deprecation marker',
-        finding: `deprecation marker in ${diff.filename}`,
-        technicalDetail: 'Deprecation — marking code as obsolete with a clear signal to stop using it before it is removed.',
-        plainLanguage: 'Deprecation warnings give consumers time to migrate. Instead of a breaking removal, you mark it deprecated, document the replacement, and remove it in the next major version.',
-        interestScore: 7,
-        contextHint: `${diff.filename} in ${ctx.repo}`,
-        retrievalTerms: getRetrievalTerms('deprecation', diff.filename, ctx.commitMessage),
-      };
-    }
+    if (!addedLines.some((l) => DEPRECATION_REGEX.test(l))) continue;
+
+    const removedText = extractRemovedLines(diff.patch);
+    if (removedText.split('\n').some((l) => DEPRECATION_REGEX.test(l))) continue;
+
+    return {
+      moduleId: 'evolutionary',
+      aspect: 'deprecation marker',
+      finding: `deprecation marker in ${diff.filename}`,
+      technicalDetail: 'Deprecation — marking code as obsolete with a clear signal to stop using it before it is removed.',
+      plainLanguage: 'Deprecation warnings give consumers time to migrate. Instead of a breaking removal, you mark it deprecated, document the replacement, and remove it in the next major version.',
+      interestScore: 7,
+      contextHint: `${diff.filename} in ${ctx.repo}`,
+      retrievalTerms: getRetrievalTerms('deprecation', diff.filename, ctx.commitMessage),
+      evidence: {
+        before: removedText.slice(0, 300) || undefined,
+        after: extractFirstHunkSnippet(diff.patch) || undefined,
+      },
+    };
   }
   return null;
 }
