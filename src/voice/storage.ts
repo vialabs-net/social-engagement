@@ -6,9 +6,15 @@ export type ContextStatus = 'skipped' | 'no_match' | 'matched';
 export type PublishSource = 'buffer' | 'linkedin_direct';
 export type VoiceStage = 'cold' | 'bootstrap' | 'warming' | 'established';
 
+export type VoiceProfileSource = 'exact' | 'fallback' | 'legacy';
+
 export interface StoredVoiceProfile {
   voice: VoiceProfile;
   version: number;
+  // 'exact': row matches the requested authorLogin (or tenant default when authorLogin=null).
+  // 'fallback': author-specific lookup missed and tenant default was returned instead.
+  // 'legacy': migrated from tenants.config.voice; treat like 'fallback' for seeding.
+  source: VoiceProfileSource;
 }
 
 export interface EditAnalysis {
