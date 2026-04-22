@@ -33,6 +33,7 @@ const REAL_COMMIT: EnrichedCommit = {
   diffs: [],
   languages: ['TypeScript', 'SQL'],
   committedAt: '2026-04-13T18:00:00Z',
+  isPrivateRepo: false,
 };
 
 const REAL_FINDING: Finding = {

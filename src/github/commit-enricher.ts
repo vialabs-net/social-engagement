@@ -15,6 +15,7 @@ export interface EnrichedCommit {
   diffs: FileDiff[];
   languages: string[];
   committedAt: string;
+  isPrivateRepo: boolean;
 }
 
 interface RawCommitData {
@@ -58,6 +59,14 @@ export async function enrichCommit(
   const fullMessage = raw.commit.message ?? '';
   const [subject, ...bodyLines] = fullMessage.split('\n');
 
+  // Fail-closed: if the visibility fetch fails, treat the repo as private.
+  let isPrivateRepo = true;
+  try {
+    isPrivateRepo = await client.getRepoVisibility(owner, repo);
+  } catch {
+    // Visibility unknown — keep fail-closed default.
+  }
+
   return {
     sha: raw.sha,
     message: subject ?? fullMessage,
@@ -70,5 +79,6 @@ export async function enrichCommit(
     diffs,
     languages,
     committedAt: raw.commit.committer?.date ?? new Date().toISOString(),
+    isPrivateRepo,
   };
 }

@@ -61,6 +61,13 @@ export class GitHubClient {
     }, GITHUB_RETRY_POLICY, `github.getCommit(${owner}/${repo}@${sha})`);
   }
 
+  async getRepoVisibility(owner: string, repo: string): Promise<boolean> {
+    return withRetry(async () => {
+      const response = await this.octokit.repos.get({ owner, repo });
+      return response.data.private;
+    }, GITHUB_RETRY_POLICY, `github.getRepoVisibility(${owner}/${repo})`);
+  }
+
   async createIssue(
     owner: string,
     repo: string,
