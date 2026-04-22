@@ -162,12 +162,25 @@ export function buildUserPrompt(
 
   parts.push('<commit>');
   parts.push(`Repository: ${commit.repo}`);
+  parts.push(`Visibility: ${commit.isPrivateRepo ? 'private' : 'public'}`);
   parts.push(`Message: ${commit.message}`);
   if (commit.body.trim()) {
     parts.push(`Body:\n${commit.body.trim().split('\n').slice(0, 5).join('\n')}`);
   }
   parts.push(`Languages: ${commit.languages.join(', ') || 'mixed'}`);
+  parts.push(`Changes: +${commit.totalAdditions} -${commit.totalDeletions} across ${commit.diffs.length} file${commit.diffs.length === 1 ? '' : 's'}`);
   if (commit.authorLogin) parts.push(`Author: ${commit.authorLogin}`);
+
+  // File summary: up to 20 files; truncated if more. Gives Claude magnitude per file.
+  const MAX_FILE_SUMMARY = 20;
+  const fileSummaryLines = commit.diffs.slice(0, MAX_FILE_SUMMARY).map(
+    (d) => `  ${d.filename} [${d.status}] +${d.additions}/-${d.deletions}${d.language ? ` (${d.language})` : ''}`,
+  );
+  if (commit.diffs.length > MAX_FILE_SUMMARY) {
+    fileSummaryLines.push(`  ...and ${commit.diffs.length - MAX_FILE_SUMMARY} more`);
+  }
+  parts.push(`Files:\n${fileSummaryLines.join('\n')}`);
+
   parts.push('</commit>');
   parts.push('');
 
@@ -218,6 +231,9 @@ export function buildUserPrompt(
   parts.push('Feature the highest-value finding and only keep secondary findings when they sharpen the same story.');
   parts.push('Lead with the engineering decision or consequence, not the tool used to get there.');
   parts.push('Describe what changed in the system behavior, control surface, reliability, cost, or operational flexibility.');
+  if (commit.isPrivateRepo) {
+    parts.push('Visibility is private: describe the architectural decision or technique in abstract terms only. Do NOT mention specific field names, table names, client names, file paths, or any detail that identifies the client or business domain. Generic framing only.');
+  }
   parts.push('Use concrete implementation details. Do not invent files, numbers, or project context.');
   parts.push('If a finding touches AI, translate that into the human-made constraint, interface, or behavior change. Do not give the model authorship credit for the commit.');
   parts.push('If <industry_context> is used, treat it as parallel validation from the industry, never as a citation or proof of the argument.');
