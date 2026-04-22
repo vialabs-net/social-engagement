@@ -167,8 +167,11 @@ describe('hallucination regression — korutx f9e98b1', () => {
     expect(prompt).toContain('Files:');
     expect(prompt).toContain('ExtTripServiceParamsV2.java');
     expect(prompt).toContain('backfill-client-rut.js');
-    // Privacy instruction must appear in task block
-    expect(prompt).toContain('Visibility is private:');
-    expect(prompt).toContain('abstract terms only');
+    // Privacy instruction must appear in task block — targeted abstraction, not blanket
+    expect(prompt).toContain('Visibility is private');
+    expect(prompt).toContain('namespace prefixes that look like company codes');
+    expect(prompt).toContain('field or column names that encode customer-specific business semantics');
+    // Generic engineering vocabulary explicitly allowed
+    expect(prompt).toContain('public engineering vocabulary, not sensitive');
   });
 });
