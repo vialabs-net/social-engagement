@@ -25,12 +25,18 @@ const REASON_LABELS: Record<RejectionReason, string> = {
 export async function notifyNewDraft(
   client: GitHubClient,
   owner: string,
-  notificationRepo: string,
+  notificationRepo: string | undefined,
   commit: EnrichedCommit,
   results: PublishResult[],
   appBaseUrl: string,
 ): Promise<void> {
   if (results.length === 0) return;
+
+  const inboxRepo = notificationRepo?.trim();
+  if (!inboxRepo) {
+    logger.info('notifier.skipped', { reason: 'no_inbox_configured', sha: commit.sha });
+    return;
+  }
 
   const commitUrl = `https://github.com/${commit.repo}/commit/${commit.sha}`;
 
@@ -58,7 +64,7 @@ _This issue will auto-close in 48 hours._`;
   try {
     const { number, url } = await client.createIssue(
       owner,
-      notificationRepo,
+      inboxRepo,
       `[devcast] New draft: ${commit.message.slice(0, 60)}`,
       body,
     );
