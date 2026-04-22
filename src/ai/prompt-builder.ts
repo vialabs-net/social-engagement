@@ -232,7 +232,9 @@ export function buildUserPrompt(
   parts.push('Lead with the engineering decision or consequence, not the tool used to get there.');
   parts.push('Describe what changed in the system behavior, control surface, reliability, cost, or operational flexibility.');
   if (commit.isPrivateRepo) {
-    parts.push('Visibility is private: describe the architectural decision or technique in abstract terms only. Do NOT mention specific field names, table names, client names, file paths, or any detail that identifies the client or business domain. Generic framing only.');
+    parts.push('Visibility is private. The repository name, standard technical paths (src/, engine/, utils/, lib/), language-standard symbols (constants, types, type guards, enums), and platform APIs (localStorage, fetch, JSON.parse, Set, Map) are safe to mention — they are public engineering vocabulary, not sensitive.');
+    parts.push('Abstract ONLY these categories when they appear: (a) namespace prefixes that look like company codes (e.g., "mintral:", "acme_"); (b) class or model names that combine business jargon with a specific name (e.g., "MintralServiceModel", "AcmeOrderProcessor"); (c) field or column names that encode customer-specific business semantics (e.g., "clientRut", "vendor_internal_code"); (d) internal product codenames not publicly announced.');
+    parts.push('When you abstract, replace the name with the technical role it plays — for example "a customer identifier field on the core entity" instead of the actual field name. Keep concrete mechanism: data flow direction, layer involved, what the change makes possible or prevents. If you cannot describe the technical role without inventing detail, omit that point rather than fill the gap with vague phrases like "wires through the full stack" or "across the system".');
   }
   parts.push('Use concrete implementation details. Do not invent files, numbers, or project context.');
   parts.push('If a finding touches AI, translate that into the human-made constraint, interface, or behavior change. Do not give the model authorship credit for the commit.');

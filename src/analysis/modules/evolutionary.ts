@@ -1,7 +1,18 @@
 import type { CodeAnalyzer, AnalysisContext, Finding, FileDiff } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
-const MIGRATION_REGEX = /(?:migrat|\.sql$)/i;
+// Filename candidates that MIGHT be migrations. Requires further structural
+// verification (see detectMigration) — "migrat" alone is not enough.
+const MIGRATION_PATH_REGEX = /(?:migrat|\.sql$)/i;
+
+// Versioning prefixes used by real migration tools:
+//   Flyway/Liquibase: V1__, V2_3__, R__
+//   Sequelize/Knex/Django/Alembic: 001_, 1234_, 20260422_, 2026_04_22_
+//   Rails: 20260422123000_
+const VERSIONED_MIGRATION_FILENAME_REGEX = /(?:^|\/)(?:V\d+(?:_\d+)*__|R__|\d{3,}_|\d{4}_\d{2}_\d{2}_|\d{8,}_)/;
+
+// SQL DDL signatures in the added content.
+const SQL_DDL_REGEX = /\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+(?:TABLE|INDEX|SCHEMA|VIEW|COLUMN|CONSTRAINT|SEQUENCE|MATERIALIZED\s+VIEW)\b/i;
 const MIN_EXTRACTION_LINES = 30;
 const MIN_LARGE_DELETION = 50;
 
@@ -65,8 +76,29 @@ function detectFileRename(ctx: AnalysisContext): Finding | null {
 }
 
 function detectMigration(ctx: AnalysisContext): Finding | null {
-  const migration = ctx.diffs.find((d) => d.status === 'added' && MIGRATION_REGEX.test(d.filename));
+  // Filename candidates — path contains "migrat" or has .sql extension.
+  const candidates = ctx.diffs.filter(
+    (d) => d.status === 'added' && MIGRATION_PATH_REGEX.test(d.filename),
+  );
+  if (candidates.length === 0) return null;
+
+  // Require at least one structural signal before firing. Filename alone is
+  // not enough — "tools/.../migration/backfill.js" is a one-off script, not a
+  // versioned schema migration, and should not trigger this finding.
+  const migration = candidates.find((d) => {
+    const isSql = d.filename.toLowerCase().endsWith('.sql');
+    if (isSql) return true;
+
+    const hasVersionedName = VERSIONED_MIGRATION_FILENAME_REGEX.test(d.filename);
+    if (hasVersionedName) return true;
+
+    const hasSqlDdl = d.patch ? SQL_DDL_REGEX.test(d.patch) : false;
+    if (hasSqlDdl) return true;
+
+    return false;
+  });
   if (!migration) return null;
+
   return {
     moduleId: 'evolutionary',
     aspect: 'migration file',

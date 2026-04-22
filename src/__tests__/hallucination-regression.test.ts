@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DesignPatternsModule } from '../analysis/modules/design-patterns.js';
+import { EvolutionaryModule } from '../analysis/modules/evolutionary.js';
+import { IntegrationModule } from '../analysis/modules/integration.js';
 import { buildUserPrompt } from '../ai/prompt-builder.js';
 import type { AnalysisContext, Finding } from '../analysis/types.js';
 import type { EnrichedCommit } from '../github/commit-enricher.js';
@@ -143,6 +145,26 @@ describe('hallucination regression — korutx f9e98b1', () => {
     expect(finding).toBeNull();
   });
 
+  it('evolutionary does not fire migration on a one-off backfill script', async () => {
+    // The fixture has `tools/js-console/migration/backfill-client-rut.js` —
+    // filename contains "migration" but the content has no SQL DDL and the
+    // filename has no versioning prefix (V1__, 001_, 20260421_, etc.).
+    const module = new EvolutionaryModule();
+    const finding = await module.analyze(KORUTX_CTX);
+    expect(finding).toBeNull();
+  });
+
+  it('integration does not fire PostgreSQL on .query() without pg import', async () => {
+    // The fixture has `searchService.query(sp)` (Alfresco SearchService),
+    // no pg/postgres import, no new Pool(). Must not fire as PostgreSQL.
+    const module = new IntegrationModule();
+    const finding = await module.analyze(KORUTX_CTX);
+    if (finding) {
+      expect(finding.finding.toLowerCase()).not.toContain('postgresql');
+      expect(finding.finding.toLowerCase()).not.toContain('postgres');
+    }
+  });
+
   it('buildUserPrompt includes visibility, magnitude, and file summary', () => {
     const commit: EnrichedCommit = {
       sha: 'f9e98b12fe4863adb1f764617558f38bfc1efc0d',
@@ -167,8 +189,11 @@ describe('hallucination regression — korutx f9e98b1', () => {
     expect(prompt).toContain('Files:');
     expect(prompt).toContain('ExtTripServiceParamsV2.java');
     expect(prompt).toContain('backfill-client-rut.js');
-    // Privacy instruction must appear in task block
-    expect(prompt).toContain('Visibility is private:');
-    expect(prompt).toContain('abstract terms only');
+    // Privacy instruction must appear in task block — targeted abstraction, not blanket
+    expect(prompt).toContain('Visibility is private');
+    expect(prompt).toContain('namespace prefixes that look like company codes');
+    expect(prompt).toContain('field or column names that encode customer-specific business semantics');
+    // Generic engineering vocabulary explicitly allowed
+    expect(prompt).toContain('public engineering vocabulary, not sensitive');
   });
 });

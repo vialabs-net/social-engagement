@@ -68,7 +68,11 @@ const KNOWN_SERVICES: ServiceSignature[] = [
   },
   {
     name: 'PostgreSQL',
-    patterns: [/from ['"]pg['"]|from ['"]postgres['"]|new Pool\(|\.query\(/],
+    // Require a structural PostgreSQL signal: package import or Pool
+    // construction. The bare `.query(` branch was removed because it matched
+    // any method named `query` (search APIs, DOM, ORMs, etc.) and produced
+    // noise on commits unrelated to PostgreSQL.
+    patterns: [/from ['"]pg['"]|from ['"]postgres['"]|require\(['"]pg['"]\)|new Pool\(/],
     category: 'relational database',
     explanation: 'Direct PostgreSQL integration — connection pooling, parameterized queries, and transaction management are the key reliability considerations.',
     score: 6,
