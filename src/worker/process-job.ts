@@ -657,8 +657,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             bufferClient, storage, config, draftId, bufferText, 'linkedin', effectiveBufferOrgId, candidate.commit.message,
           );
           if (publishResult) {
-            const notificationRepo = config.github.notification_repo ?? repo;
-            await notifyNewDraft(github, owner, notificationRepo, candidate.commit, [publishResult], deps.appBaseUrl);
+            await notifyNewDraft(github, owner, config.github.notification_repo, candidate.commit, [publishResult], deps.appBaseUrl);
           }
         } else {
           logger.info('worker.commit.buffer_skipped', { sha: candidate.commit.sha, reason: 'no buffer token' });

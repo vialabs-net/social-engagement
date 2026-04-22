@@ -160,9 +160,15 @@ function html(
         <input type="text" name="name" value="${escapeHtml(name)}" placeholder="Your Name" required>
         <label>Website <span class="optional">optional</span></label>
         <input type="url" name="website" value="${escapeHtml(website)}" placeholder="https://yoursite.com">
-        <label>Notification repo <span class="optional">optional</span></label>
-        <input type="text" name="notification_repo" value="${escapeHtml(notificationRepo)}" placeholder="my-repo">
-        <p class="hint">GitHub repo where draft notifications are posted as issues. Defaults to the commit's repo if blank.</p>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Draft inbox <span class="optional">optional</span></div>
+        <p class="hint-card">Every time devcast prepares a draft, it can drop a quick heads-up as a GitHub issue — like a personal inbox just for your social posts. Handy if you'd rather skim drafts on GitHub than open Buffer.</p>
+        <p class="hint-card" style="margin-top:8px">Pick any repo you own (public or private — we suggest creating one called <strong>devcast-inbox</strong>). Leave it blank and devcast stays silent here; your drafts still wait for you in Buffer.</p>
+        <label style="margin-top:16px">Repo name</label>
+        <input type="text" name="notification_repo" value="${escapeHtml(notificationRepo)}" placeholder="devcast-inbox">
+        <p class="hint">Just the repo name, no owner. We'll open issues under <span style="color:#a1a1aa">${escapeHtml(tenant.github_username)}/&lt;repo&gt;</span>.</p>
       </div>
 
       <div class="card">
