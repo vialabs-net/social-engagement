@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   console.log(`Files:     ${commit.diffs.length}`);
   console.log('');
 
-  const findings = await runPipeline({
+  const { findings } = await runPipeline({
     diffs: commit.diffs,
     commitMessage: commit.message,
     commitBody: commit.body,

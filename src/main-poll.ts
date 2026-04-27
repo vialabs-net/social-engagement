@@ -181,7 +181,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const pipelineFindings = await runPipeline(
+      const { findings: pipelineFindings } = await runPipeline(
         {
           diffs: commit.diffs,
           commitMessage: commit.message,

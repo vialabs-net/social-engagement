@@ -384,7 +384,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const pipelineFindings = await runPipeline(
+      const { findings: pipelineFindings } = await runPipeline(
         {
           diffs: commit.diffs,
           commitMessage: commit.message,
