@@ -513,6 +513,7 @@ export class SupabaseStorage implements IVoiceStorage {
         strength: signal.strength,
         pattern_kind: signal.pattern_kind,
         affected_symbols: signal.affected_symbols,
+        affected_files: signal.affected_files,
         specific_change: signal.specific_change,
         source: signal.source,
         accumulated_at: signal.accumulated_at,
@@ -692,6 +693,19 @@ export class SupabaseStorage implements IVoiceStorage {
       });
 
     if (error) throw new Error(`recordRoutingDecision failed: ${error.message}`);
+  }
+
+  async adjustSignalBankMultiplier(authorLogin: string, repo: string, topic: string, factor: number): Promise<void> {
+    const existing = await this.getSignalBankEntry(authorLogin, repo, topic);
+    if (!existing) return;
+
+    const clamped = Math.min(3.0, Math.max(0.1, existing.multiplier * factor));
+    const { error } = await this.db
+      .from('signal_bank')
+      .update({ multiplier: clamped, updated_at: new Date().toISOString() })
+      .eq('id', existing.id);
+
+    if (error) throw new Error(`adjustSignalBankMultiplier failed: ${error.message}`);
   }
 
   private async fetchVoiceProfileRow(authorLogin: string | null): Promise<VoiceProfileRow | null> {

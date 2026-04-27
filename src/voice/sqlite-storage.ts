@@ -60,6 +60,7 @@ interface SqliteSignalEventRow {
   strength: number;
   pattern_kind: string;
   affected_symbols: string; // JSON-encoded string[]
+  affected_files: string;   // JSON-encoded string[]
   specific_change: string;
   source: string;
   accumulated_at: string;
@@ -247,6 +248,7 @@ export class SqliteStorage implements IVoiceStorage {
         strength             REAL NOT NULL,
         pattern_kind         TEXT NOT NULL,
         affected_symbols     TEXT NOT NULL DEFAULT '[]',
+        affected_files       TEXT NOT NULL DEFAULT '[]',
         specific_change      TEXT NOT NULL DEFAULT '',
         source               TEXT NOT NULL,
         accumulated_at       TEXT NOT NULL DEFAULT (datetime('now')),
@@ -678,9 +680,9 @@ export class SqliteStorage implements IVoiceStorage {
     this.db.prepare(`
       INSERT INTO signal_events (
         tenant_id, github_author_login, repo, topic,
-        commit_sha, strength, pattern_kind, affected_symbols, specific_change,
+        commit_sha, strength, pattern_kind, affected_symbols, affected_files, specific_change,
         source, accumulated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       this.tenantId,
       signal.github_author_login,
@@ -690,6 +692,7 @@ export class SqliteStorage implements IVoiceStorage {
       signal.strength,
       signal.pattern_kind,
       JSON.stringify(signal.affected_symbols),
+      JSON.stringify(signal.affected_files),
       signal.specific_change,
       signal.source,
       signal.accumulated_at,
@@ -743,6 +746,7 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(rows.map((r) => ({
       ...r,
       affected_symbols: JSON.parse(r.affected_symbols) as string[],
+      affected_files: JSON.parse(r.affected_files) as string[],
       consumed: !!r.consumed,
     } as SignalEvent)));
   }
@@ -840,6 +844,23 @@ export class SqliteStorage implements IVoiceStorage {
       input.score_lexical,
       input.decision,
     );
+    return Promise.resolve();
+  }
+
+  adjustSignalBankMultiplier(authorLogin: string, repo: string, topic: string, factor: number): Promise<void> {
+    const row = this.db.prepare(`
+      SELECT id, multiplier FROM signal_bank
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+    `).get(this.tenantId, authorLogin, repo, topic) as { id: number; multiplier: number } | undefined;
+
+    if (!row) return Promise.resolve();
+
+    const clamped = Math.min(3.0, Math.max(0.1, row.multiplier * factor));
+    this.db.prepare(`
+      UPDATE signal_bank SET multiplier = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(clamped, row.id);
+
     return Promise.resolve();
   }
 

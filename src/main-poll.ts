@@ -34,6 +34,7 @@ import {
   type RankedCommitCandidate,
 } from './worker/daily-post-selection.js';
 import { check, checkCrossVolume } from './analysis/accumulation-engine.js';
+import { scoreCoherenceFromSignals } from './analysis/coherence-router.js';
 import { consumeSignalsForPost } from './analysis/signal-consumer.js';
 import { generateSynthesisPost } from './ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from './analysis/types.js';
@@ -203,7 +204,8 @@ async function main(): Promise<void> {
       // Deposit weak signals (best-effort — never blocks post generation)
       const depositNowIso = new Date().toISOString();
       const depositAuthorLogin = commit.authorLogin ?? config.author.github_username;
-      await depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso)
+      const commitFiles = commit.diffs.map((d) => d.filename);
+      await depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso, commitFiles)
         .catch((err) => logger.warn('poll.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
       if (pipelineFindings.length === 0) {
@@ -414,6 +416,7 @@ async function depositWeakSignalsPoll(
   tenantId: string,
   authorLogin: string,
   nowIso: string,
+  files: string[],
 ): Promise<void> {
   const deposits: WeakSignal[] = [];
 
@@ -424,6 +427,7 @@ async function depositWeakSignalsPoll(
       pattern_kind: MODULE_PATTERN_KIND_POLL[wf.moduleId] ?? 'semantic_refactor',
       source: 'finding',
       affected_symbols: [],
+      affected_files: files,
       specific_change: wf.finding.slice(0, 80),
       commit_sha: commitSha,
       repo,
@@ -440,6 +444,7 @@ async function depositWeakSignalsPoll(
       pattern_kind: 'behavioral_change',
       source: 'delta_hit',
       affected_symbols: [],
+      affected_files: files,
       specific_change: 'bilateral pattern match — same pattern in added and removed lines',
       commit_sha: commitSha,
       repo,
@@ -497,10 +502,31 @@ async function runAccumulationCheckPoll(
 
   if (allSignals.length === 0) return;
 
+  const firedEntry = firedEntries[0];
+  const medianIntervalDays = firedEntry?.commit_frequency ?? null;
+  let gatillador: 'focal' | 'arco' | 'focal_multiple';
+  if (firedTopics.length >= 2) {
+    const coherence = scoreCoherenceFromSignals(allSignals, medianIntervalDays);
+    gatillador = coherence.decision === 'arco' ? 'arco' : 'focal_multiple';
+    await storage.recordRoutingDecision({
+      github_author_login: authorLogin,
+      voice_post_id: null,
+      commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
+      score_coherencia: coherence.total,
+      score_structural: coherence.structural,
+      score_temporal: coherence.temporal,
+      score_lexical: coherence.lexical,
+      decision: coherence.decision,
+    }).catch((err) => logger.warn('poll.accumulation.routing_record.failed', { error: String(err) }));
+  } else {
+    gatillador = 'focal';
+  }
+
   logger.info('poll.accumulation.fire', {
     authorLogin,
     repo,
     topics: firedTopics,
+    gatillador,
     signalCount: allSignals.length,
   });
 
@@ -508,21 +534,33 @@ async function runAccumulationCheckPoll(
     ? await storage.getPublishedForExposure(authorLogin, 'linkedin')
     : [];
 
-  const { draftId } = await generateSynthesisPost(generationAi, storage, {
-    authorLogin,
-    repo,
-    gatillador: 'focal',
-    topics: firedTopics,
-    signals: allSignals,
-    voiceProfile: authorState.voiceProfile,
-    voiceStage: authorState.voiceStage,
-    config,
-    exposurePool,
-    bootstrapPosts: authorState.voiceProfile.bootstrap_posts ?? [],
-    draftIndexToday: authorState.todayDrafts.length,
-  });
+  const topicsToGenerate: Array<{ topics: string[]; signals: SignalEvent[]; gatillador: 'focal' | 'arco' }> =
+    gatillador === 'focal_multiple'
+      ? firedTopics.map((topic) => ({
+          topics: [topic],
+          signals: allSignals.filter((s) => s.topic === topic),
+          gatillador: 'focal' as const,
+        }))
+      : [{ topics: firedTopics, signals: allSignals, gatillador: gatillador as 'focal' | 'arco' }];
 
-  await consumeSignalsForPost(storage, draftId, 'focal', firedTopics, authorLogin, repo);
+  for (let i = 0; i < topicsToGenerate.length; i++) {
+    const item = topicsToGenerate[i]!;
+    const { draftId } = await generateSynthesisPost(generationAi, storage, {
+      authorLogin,
+      repo,
+      gatillador: item.gatillador,
+      topics: item.topics,
+      signals: item.signals,
+      voiceProfile: authorState.voiceProfile,
+      voiceStage: authorState.voiceStage,
+      config,
+      exposurePool,
+      bootstrapPosts: authorState.voiceProfile.bootstrap_posts ?? [],
+      draftIndexToday: authorState.todayDrafts.length + i,
+    });
 
-  logger.info('poll.accumulation.done', { draftId, authorLogin, topics: firedTopics });
+    await consumeSignalsForPost(storage, draftId, item.gatillador, item.topics, authorLogin, repo);
+
+    logger.info('poll.accumulation.done', { draftId, authorLogin, topics: item.topics, gatillador: item.gatillador });
+  }
 }

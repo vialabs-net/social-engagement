@@ -9,6 +9,8 @@ import { mergeVoiceProfile } from '../voice/profile-utils.js';
 
 const MATCH_THRESHOLD = 0.4;  // min similarity to count as a match
 const EXPIRED_DAYS = 7;
+const MULTIPLIER_FACTOR_HIGH = 0.85; // edit_ratio >= 0.7: AI nailed it, lower threshold
+const MULTIPLIER_FACTOR_LOW = 1.15;  // edit_ratio <= 0.3: heavy rewrite, raise threshold
 
 function extractLinkedInUrn(externalLink: string | null): string | undefined {
   if (!externalLink) return undefined;
@@ -112,6 +114,22 @@ export async function scanPlatform(
         platform,
         linkedinUrn: linkedinUrn ?? null,
       });
+      // Adapt signal_bank multiplier based on edit_ratio feedback (best-effort)
+      if (bestDraft.top_module_id && bestDraft.author_login && bestDraft.repo) {
+        const factor = bestScore >= 0.7
+          ? MULTIPLIER_FACTOR_HIGH
+          : bestScore <= 0.3
+            ? MULTIPLIER_FACTOR_LOW
+            : null;
+        if (factor !== null) {
+          storage.adjustSignalBankMultiplier(bestDraft.author_login, bestDraft.repo, bestDraft.top_module_id, factor)
+            .catch((err) => logger.warn('sent_scanner.multiplier_adjust.failed', {
+              draftId: bestDraft.id,
+              topic: bestDraft.top_module_id,
+              error: String(err),
+            }));
+        }
+      }
       // Remove matched draft so it can't be claimed by another sent post
       remaining.splice(bestIdx, 1);
       matched++;

@@ -141,6 +141,7 @@ export interface SignalEvent {
   readonly strength: number;
   readonly pattern_kind: WeakSignal['pattern_kind'];
   readonly affected_symbols: string[];
+  readonly affected_files: string[];
   readonly specific_change: string;
   readonly source: 'finding' | 'delta_hit' | 'haiku_lazy';
   readonly accumulated_at: string;
@@ -292,6 +293,15 @@ export interface IVoiceStorage {
 
   /** Write an arco/focal routing decision for calibration. */
   recordRoutingDecision(input: RoutingDecisionInput): Promise<void>;
+
+  /**
+   * Adjust signal_bank.multiplier for a specific (author, repo, topic) bucket.
+   * factor < 1 lowers the threshold (fires more easily next time).
+   * factor > 1 raises the threshold (fires less easily next time).
+   * Multiplier is clamped to [0.1, 3.0] to prevent runaway adaptation.
+   * No-op if no bank row exists yet for this bucket.
+   */
+  adjustSignalBankMultiplier(authorLogin: string, repo: string, topic: string, factor: number): Promise<void>;
 }
 
 export type {

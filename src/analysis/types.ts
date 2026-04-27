@@ -85,6 +85,7 @@ export interface WeakSignal {
     | 'behavioral_change';
   source: 'finding' | 'delta_hit' | 'haiku_lazy';
   affected_symbols: string[]; // names of functions/classes/types affected
+  affected_files: string[];   // file paths touched in this commit (for coherence routing)
   specific_change: string;    // 1-line description: "timeout 5s→30s in fetchUser"
   commit_sha: string;
   repo: string;
