@@ -83,6 +83,12 @@ export function buildSystemPrompt(
     '',
   ].filter(Boolean) as string[];
 
+  const languageInstruction = buildLanguageInstruction(voiceProfile.post_language);
+  if (languageInstruction) {
+    sections.push('');
+    sections.push(languageInstruction);
+  }
+
   if (context.stage === 'cold') {
     sections.push(buildLegacyVoiceBlocks(voiceProfile));
   } else if (context.stage !== 'established') {
@@ -568,6 +574,16 @@ function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
     return null;
   }
 
+  return null;
+}
+
+function buildLanguageInstruction(language: string | undefined): string | null {
+  if (language === 'en-b2') {
+    return '<language>\nWrite in English. Vocabulary level: B2 — clear and professional, no idioms or rarely-used expressions. Accessible to non-native English speakers without being simplistic.\n</language>';
+  }
+  if (language === 'es') {
+    return '<language>\nEscribe en español. Tono natural de ingeniería de software en español latinoamericano. Sin anglicismos innecesarios.\n</language>';
+  }
   return null;
 }
 
