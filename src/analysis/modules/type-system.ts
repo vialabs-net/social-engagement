@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface TypePattern {
@@ -60,7 +60,7 @@ export class TypeSystemModule implements CodeAnalyzer {
   readonly category = 'type_system' as const;
   readonly applicableLanguages = ['TypeScript'];
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     if (!ctx.languages.includes('TypeScript')) return null;
 
     const tsDiffs = ctx.diffs.filter(d => d.language === 'TypeScript');
@@ -78,6 +78,8 @@ export class TypeSystemModule implements CodeAnalyzer {
 
     const primaryFile = tsDiffs[0]?.filename ?? 'unknown';
 
+    let hasBilateral = false;
+
     for (const tp of TYPE_PATTERNS) {
       if (tp.pattern.test(addedText) && !tp.pattern.test(removedText)) {
         return {
@@ -94,8 +96,11 @@ export class TypeSystemModule implements CodeAnalyzer {
           },
         };
       }
+      if (tp.pattern.test(addedText) && tp.pattern.test(removedText)) {
+        hasBilateral = true;
+      }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

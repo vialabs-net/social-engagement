@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 const TEST_FILE_PATTERN = /\.(test|spec)\.(ts|tsx|js|jsx|py)$|__tests__\//;
@@ -11,7 +11,7 @@ export class TestingModule implements CodeAnalyzer {
   readonly name = 'Testing Analyzer';
   readonly category = 'testing' as const;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     const testDiffs = ctx.diffs.filter(d => TEST_FILE_PATTERN.test(d.filename));
     if (testDiffs.length === 0) return null;
 
@@ -29,6 +29,9 @@ export class TestingModule implements CodeAnalyzer {
     const hasParametrized = PARAMETRIZED_PATTERN.test(addedText) && !PARAMETRIZED_PATTERN.test(removedText);
     const hasEdgeCases = EDGE_CASE_KEYWORDS.test(addedText) && !EDGE_CASE_KEYWORDS.test(removedText);
     const hasMocks = MOCK_PATTERN.test(addedText);
+    const hasBilateral =
+      (PARAMETRIZED_PATTERN.test(addedText) && PARAMETRIZED_PATTERN.test(removedText)) ||
+      (EDGE_CASE_KEYWORDS.test(addedText) && EDGE_CASE_KEYWORDS.test(removedText));
 
     // Count test cases (rough heuristic)
     const testCount = (addedText.match(/\bit\(|\btest\(|\bdef test_/g) ?? []).length;
@@ -84,6 +87,6 @@ export class TestingModule implements CodeAnalyzer {
       };
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

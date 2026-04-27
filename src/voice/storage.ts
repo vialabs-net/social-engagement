@@ -1,4 +1,5 @@
 import type { BootstrapPost, ContentStrategy, HookStyle, VoiceProfile } from '../config/schema.js';
+import type { WeakSignal } from '../analysis/types.js';
 
 export type Platform = 'linkedin' | 'instagram';
 export type PostStatus = 'pending' | 'scheduled' | 'published' | 'queued' | 'expired' | 'failed';
@@ -114,6 +115,56 @@ export interface RecentTopFinding {
   published_at: string;
 }
 
+export interface SignalBankEntry {
+  readonly id: number;
+  readonly github_author_login: string;
+  readonly repo: string;
+  readonly topic: string;
+  readonly weight_sum: number;
+  readonly signal_count: number;
+  readonly last_signal_at: string | null;
+  readonly half_life_signal: number;
+  readonly commit_frequency: number | null;
+  readonly threshold_baseline: number;
+  readonly multiplier: number;
+  readonly half_life_refractory: number;
+  readonly last_fired_at: string | null;
+  readonly updated_at: string;
+}
+
+export interface SignalEvent {
+  readonly id: number;
+  readonly github_author_login: string;
+  readonly repo: string;
+  readonly topic: string;
+  readonly commit_sha: string;
+  readonly strength: number;
+  readonly pattern_kind: WeakSignal['pattern_kind'];
+  readonly affected_symbols: string[];
+  readonly specific_change: string;
+  readonly source: 'finding' | 'delta_hit' | 'haiku_lazy';
+  readonly accumulated_at: string;
+  readonly consumed: boolean;
+  readonly consumed_by_post_id: string | null;
+}
+
+export interface DisparoAuditItem {
+  readonly topic: string;
+  readonly weight_sum: number;
+  readonly last_fired_at: string | null;
+}
+
+export interface RoutingDecisionInput {
+  readonly github_author_login: string;
+  readonly voice_post_id: string | null;
+  readonly commit_shas: string[];
+  readonly score_coherencia: number;
+  readonly score_structural: number;
+  readonly score_temporal: number;
+  readonly score_lexical: number;
+  readonly decision: 'arco' | 'focal_multiple';
+}
+
 export interface IVoiceStorage {
   /** The tenant this storage instance is scoped to. All queries filter by this. */
   readonly tenantId: string;
@@ -203,6 +254,44 @@ export interface IVoiceStorage {
 
   /** Get all taken slots for a platform on a given day (UTC date string YYYY-MM-DD). */
   getTakenSlots(platform: Platform, dayUtc: string): Promise<Date[]>;
+
+  // ── Signal Bank ──────────────────────────────────────────────────────────────
+
+  /** Insert a raw signal event and update the signal_bank aggregate (upsert). */
+  depositSignal(signal: WeakSignal): Promise<void>;
+
+  /** Read the current aggregated state for one (authorLogin, repo, topic) bucket. */
+  getSignalBankEntry(authorLogin: string, repo: string, topic: string): Promise<SignalBankEntry | null>;
+
+  /** Read all signal_bank entries for an author across all topics in a given repo. */
+  getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]>;
+
+  /** Return all unconsumed signal events for one (authorLogin, repo, topic) bucket. */
+  getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]>;
+
+  /**
+   * Mark signals as consumed and write the post_disparo_audit snapshot.
+   * Also resets weight_sum=0, signal_count=0, and sets last_fired_at=NOW() on signal_bank.
+   */
+  consumeSignals(
+    postId: string,
+    authorLogin: string,
+    repo: string,
+    gatillador: string,
+    topics: string[],
+    signalIds: number[],
+    snapshot: DisparoAuditItem[],
+  ): Promise<void>;
+
+  /**
+   * Undo signal consumption for a rejected post.
+   * Restores consumed=false on signal_events and weight_sum from snapshot.
+   * Does NOT reset last_fired_at (refractory period was earned).
+   */
+  rollbackPostConsumption(postId: string): Promise<void>;
+
+  /** Write an arco/focal routing decision for calibration. */
+  recordRoutingDecision(input: RoutingDecisionInput): Promise<void>;
 }
 
 export type {

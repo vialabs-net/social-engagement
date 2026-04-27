@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ElixirPattern {
@@ -107,7 +107,9 @@ export class ElixirPatternsModule implements CodeAnalyzer {
   readonly category = 'elixir_patterns' as const;
   readonly applicableLanguages = ['Elixir'];
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
+    let hasBilateral = false;
+
     for (const diff of ctx.diffs) {
       if (!diff.patch || diff.status === 'removed') continue;
       if (diff.language !== 'Elixir') continue;
@@ -138,9 +140,12 @@ export class ElixirPatternsModule implements CodeAnalyzer {
             },
           };
         }
+        if (pattern.detect(addedLines) && pattern.detect(removedLines)) {
+          hasBilateral = true;
+        }
       }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

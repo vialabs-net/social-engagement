@@ -15,7 +15,12 @@ import type {
   RecentTopFinding,
   SlottedPost,
   StoredVoiceProfile,
+  SignalBankEntry,
+  SignalEvent,
+  DisparoAuditItem,
+  RoutingDecisionInput,
 } from './storage.js';
+import type { WeakSignal } from '../analysis/types.js';
 
 interface SqliteVoiceProfileRow {
   id: string;
@@ -28,6 +33,46 @@ type SqliteVoicePostRow = Omit<VoicePost, 'edit_analysis' | 'has_industry_contex
   edit_analysis: string | null;
   has_industry_context: number;
 };
+
+interface SqliteSignalBankRow {
+  id: number;
+  github_author_login: string;
+  repo: string;
+  topic: string;
+  weight_sum: number;
+  signal_count: number;
+  last_signal_at: string | null;
+  half_life_signal: number;
+  commit_frequency: number | null;
+  threshold_baseline: number;
+  multiplier: number;
+  half_life_refractory: number;
+  last_fired_at: string | null;
+  updated_at: string;
+}
+
+interface SqliteSignalEventRow {
+  id: number;
+  github_author_login: string;
+  repo: string;
+  topic: string;
+  commit_sha: string;
+  strength: number;
+  pattern_kind: string;
+  affected_symbols: string; // JSON-encoded string[]
+  specific_change: string;
+  source: string;
+  accumulated_at: string;
+  consumed: number; // 0 or 1
+  consumed_by_post_id: string | null;
+}
+
+interface SqliteDisparoAuditRow {
+  github_author_login: string;
+  repo: string;
+  consumed_signal_ids: string; // JSON-encoded number[]
+  signal_bank_snapshot: string; // JSON-encoded DisparoAuditItem[]
+}
 
 function normalizeVoiceProfile(candidate: unknown): VoiceProfile | null {
   const parsed = VoiceProfileSchema.safeParse(candidate);
@@ -171,6 +216,78 @@ export class SqliteStorage implements IVoiceStorage {
         last_event_id   TEXT NOT NULL,
         last_event_etag TEXT,
         updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS signal_bank (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id            TEXT NOT NULL,
+        github_author_login  TEXT NOT NULL,
+        repo                 TEXT NOT NULL,
+        topic                TEXT NOT NULL,
+        weight_sum           REAL NOT NULL DEFAULT 0,
+        signal_count         INTEGER NOT NULL DEFAULT 0,
+        last_signal_at       TEXT,
+        half_life_signal     REAL NOT NULL DEFAULT 63,
+        commit_frequency     REAL,
+        threshold_baseline   REAL NOT NULL DEFAULT 15,
+        multiplier           REAL NOT NULL DEFAULT 0.5,
+        half_life_refractory REAL NOT NULL DEFAULT 42,
+        last_fired_at        TEXT,
+        updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (tenant_id, github_author_login, repo, topic)
+      );
+
+      CREATE TABLE IF NOT EXISTS signal_events (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id            TEXT NOT NULL,
+        github_author_login  TEXT NOT NULL,
+        repo                 TEXT NOT NULL,
+        topic                TEXT NOT NULL,
+        commit_sha           TEXT NOT NULL,
+        strength             REAL NOT NULL,
+        pattern_kind         TEXT NOT NULL,
+        affected_symbols     TEXT NOT NULL DEFAULT '[]',
+        specific_change      TEXT NOT NULL DEFAULT '',
+        source               TEXT NOT NULL,
+        accumulated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        consumed             INTEGER NOT NULL DEFAULT 0,
+        consumed_by_post_id  TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS signal_events_bank
+        ON signal_events (tenant_id, github_author_login, repo, topic, consumed);
+      CREATE INDEX IF NOT EXISTS signal_events_commit
+        ON signal_events (commit_sha);
+
+      CREATE TABLE IF NOT EXISTS post_disparo_audit (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id              TEXT NOT NULL,
+        tenant_id            TEXT NOT NULL,
+        github_author_login  TEXT NOT NULL,
+        repo                 TEXT NOT NULL,
+        gatillador           TEXT NOT NULL,
+        topics               TEXT NOT NULL DEFAULT '[]',
+        consumed_signal_ids  TEXT NOT NULL DEFAULT '[]',
+        signal_bank_snapshot TEXT NOT NULL DEFAULT '[]',
+        fired_at             TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS post_disparo_audit_post
+        ON post_disparo_audit (post_id);
+
+      CREATE TABLE IF NOT EXISTS routing_decisions_audit (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id            TEXT NOT NULL,
+        github_author_login  TEXT NOT NULL,
+        voice_post_id        TEXT,
+        commit_shas          TEXT NOT NULL DEFAULT '[]',
+        score_coherencia     REAL NOT NULL,
+        score_structural     REAL NOT NULL,
+        score_temporal       REAL NOT NULL,
+        score_lexical        REAL NOT NULL,
+        decision             TEXT NOT NULL,
+        edit_ratio_result    REAL,
+        decided_at           TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
   }
@@ -555,6 +672,175 @@ export class SqliteStorage implements IVoiceStorage {
         AND scheduled_at >= ? AND scheduled_at <= ?
     `).all(platform, `${dayUtc}T00:00:00.000Z`, `${dayUtc}T23:59:59.999Z`) as { scheduled_at: string }[];
     return Promise.resolve(rows.map(r => new Date(r.scheduled_at)));
+  }
+
+  depositSignal(signal: WeakSignal): Promise<void> {
+    this.db.prepare(`
+      INSERT INTO signal_events (
+        tenant_id, github_author_login, repo, topic,
+        commit_sha, strength, pattern_kind, affected_symbols, specific_change,
+        source, accumulated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      this.tenantId,
+      signal.github_author_login,
+      signal.repo,
+      signal.topic,
+      signal.commit_sha,
+      signal.strength,
+      signal.pattern_kind,
+      JSON.stringify(signal.affected_symbols),
+      signal.specific_change,
+      signal.source,
+      signal.accumulated_at,
+    );
+
+    this.db.prepare(`
+      INSERT INTO signal_bank (
+        tenant_id, github_author_login, repo, topic,
+        weight_sum, signal_count, last_signal_at
+      ) VALUES (?, ?, ?, ?, ?, 1, ?)
+      ON CONFLICT (tenant_id, github_author_login, repo, topic) DO UPDATE SET
+        weight_sum     = weight_sum + excluded.weight_sum,
+        signal_count   = signal_count + 1,
+        last_signal_at = excluded.last_signal_at,
+        updated_at     = datetime('now')
+    `).run(
+      this.tenantId,
+      signal.github_author_login,
+      signal.repo,
+      signal.topic,
+      signal.strength,
+      signal.accumulated_at,
+    );
+
+    return Promise.resolve();
+  }
+
+  getSignalBankEntry(authorLogin: string, repo: string, topic: string): Promise<SignalBankEntry | null> {
+    const row = this.db.prepare(`
+      SELECT * FROM signal_bank
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+    `).get(this.tenantId, authorLogin, repo, topic) as SqliteSignalBankRow | null;
+    return Promise.resolve(row ?? null);
+  }
+
+  getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM signal_bank
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+    `).all(this.tenantId, authorLogin, repo) as SqliteSignalBankRow[];
+    return Promise.resolve(rows);
+  }
+
+  getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM signal_events
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ? AND consumed = 0
+      ORDER BY accumulated_at ASC
+    `).all(this.tenantId, authorLogin, repo, topic) as SqliteSignalEventRow[];
+
+    return Promise.resolve(rows.map((r) => ({
+      ...r,
+      affected_symbols: JSON.parse(r.affected_symbols) as string[],
+      consumed: !!r.consumed,
+    } as SignalEvent)));
+  }
+
+  consumeSignals(
+    postId: string,
+    authorLogin: string,
+    repo: string,
+    gatillador: string,
+    topics: string[],
+    signalIds: number[],
+    snapshot: DisparoAuditItem[],
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    const placeholders = signalIds.map(() => '?').join(', ');
+    this.db.prepare(`
+      UPDATE signal_events
+      SET consumed = 1, consumed_by_post_id = ?
+      WHERE tenant_id = ? AND id IN (${placeholders})
+    `).run(postId, this.tenantId, ...signalIds);
+
+    this.db.prepare(`
+      INSERT INTO post_disparo_audit (
+        post_id, tenant_id, github_author_login, repo,
+        gatillador, topics, consumed_signal_ids, signal_bank_snapshot, fired_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      postId,
+      this.tenantId,
+      authorLogin,
+      repo,
+      gatillador,
+      JSON.stringify(topics),
+      JSON.stringify(signalIds),
+      JSON.stringify(snapshot),
+      now,
+    );
+
+    for (const topic of topics) {
+      this.db.prepare(`
+        UPDATE signal_bank
+        SET weight_sum = 0, signal_count = 0, last_fired_at = ?, updated_at = ?
+        WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+      `).run(now, now, this.tenantId, authorLogin, repo, topic);
+    }
+
+    return Promise.resolve();
+  }
+
+  rollbackPostConsumption(postId: string): Promise<void> {
+    const audit = this.db.prepare(`
+      SELECT * FROM post_disparo_audit
+      WHERE post_id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(postId, this.tenantId) as SqliteDisparoAuditRow | null;
+
+    if (!audit) return Promise.resolve();
+
+    const signalIds = JSON.parse(audit.consumed_signal_ids) as number[];
+    const snapshot = JSON.parse(audit.signal_bank_snapshot) as DisparoAuditItem[];
+
+    const placeholders = signalIds.map(() => '?').join(', ');
+    this.db.prepare(`
+      UPDATE signal_events
+      SET consumed = 0, consumed_by_post_id = NULL
+      WHERE tenant_id = ? AND id IN (${placeholders})
+    `).run(this.tenantId, ...signalIds);
+
+    for (const item of snapshot) {
+      this.db.prepare(`
+        UPDATE signal_bank
+        SET weight_sum = ?, updated_at = datetime('now')
+        WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+      `).run(item.weight_sum, this.tenantId, audit.github_author_login, audit.repo, item.topic);
+    }
+
+    return Promise.resolve();
+  }
+
+  recordRoutingDecision(input: RoutingDecisionInput): Promise<void> {
+    this.db.prepare(`
+      INSERT INTO routing_decisions_audit (
+        tenant_id, github_author_login, voice_post_id, commit_shas,
+        score_coherencia, score_structural, score_temporal, score_lexical, decision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      this.tenantId,
+      input.github_author_login,
+      input.voice_post_id,
+      JSON.stringify(input.commit_shas),
+      input.score_coherencia,
+      input.score_structural,
+      input.score_temporal,
+      input.score_lexical,
+      input.decision,
+    );
+    return Promise.resolve();
   }
 
   /** Local-dev utility: read/write events_state */

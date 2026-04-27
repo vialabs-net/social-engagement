@@ -1,14 +1,27 @@
 import { logger } from '../utils/logger.js';
 import { MODULE_REGISTRY } from './modules/index.js';
-import type { AnalysisContext, Finding, CodeAnalyzer } from './types.js';
+import type { AnalysisContext, Finding, DeltaHit, CodeAnalyzer } from './types.js';
 import { enrichFindingsForRetrieval } from './retrieval-enrichment.js';
 
+export interface PipelineResult {
+  /** Findings with score ≥ 5 — eligible for immediate post (gatilladores 1 & 2) */
+  readonly findings: Finding[];
+  /** Findings with score 1-4 — become WeakSignals per topic in the SignalBank */
+  readonly weakFindings: Finding[];
+  /** Bilateral pattern matches — become WeakSignal(strength=2) per topic */
+  readonly deltaHits: DeltaHit[];
+}
+
 /**
- * Runs all applicable modules in parallel and returns the top N findings
- * sorted by interestScore DESC.
+ * Runs all applicable modules in parallel and returns findings routed by score.
  *
- * - Failure in one module = null finding, NOT a crash (Promise.allSettled)
- * - Returns empty array if nothing interesting found → caller skips Claude
+ * - score ≥ 5  → findings[] (immediate post path)
+ * - score 1-4  → weakFindings[] (signal accumulation)
+ * - delta_hit  → deltaHits[] (bilateral match — signal accumulation, strength=2)
+ * - null       → discarded
+ *
+ * - Failure in one module = null result, NOT a crash (Promise.allSettled)
+ * - findings[] empty → caller skips Claude for this commit
  * - applicableLanguages filter: module only runs if the commit touches
  *   at least one of the module's specified languages
  */
@@ -17,7 +30,7 @@ export async function runPipeline(
   topN = 3,
   modules: CodeAnalyzer[] = MODULE_REGISTRY,
   recentModuleIds: string[] = [],
-): Promise<Finding[]> {
+): Promise<PipelineResult> {
   const applicableModules = modules.filter(mod => {
     if (!mod.applicableLanguages) return true;
     return mod.applicableLanguages.some(lang => ctx.languages.includes(lang));
@@ -34,7 +47,8 @@ export async function runPipeline(
     applicableModules.map(mod => mod.analyze(ctx))
   );
 
-  const findings: Finding[] = [];
+  const allFindings: Finding[] = [];
+  const deltaHits: DeltaHit[] = [];
 
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
@@ -43,8 +57,11 @@ export async function runPipeline(
     if (result === undefined || mod === undefined) continue;
 
     if (result.status === 'fulfilled') {
-      if (result.value !== null) {
-        findings.push(result.value);
+      if (result.value === null) continue;
+      if ('kind' in result.value && result.value.kind === 'delta_hit') {
+        deltaHits.push(result.value as DeltaHit);
+      } else {
+        allFindings.push(result.value as Finding);
       }
     } else {
       logger.warn('analysis.module.failed', {
@@ -56,14 +73,16 @@ export async function runPipeline(
 
   // Freshness multiplier: penalise modules that fired recently.
   // adjustedScore = interestScore / (fires_in_window + 1)
-  // A module that fired 3 times recently gets score ÷ 4, making room for others.
   const fireCounts = new Map<string, number>();
   for (const id of recentModuleIds) {
     fireCounts.set(id, (fireCounts.get(id) ?? 0) + 1);
   }
 
   const MIN_INTEREST_SCORE = 5;
-  const enrichedFindings = enrichFindingsForRetrieval(findings, ctx);
+  const enrichedFindings = enrichFindingsForRetrieval(allFindings, ctx);
+
+  const weakFindings = enrichedFindings.filter((f) => f.interestScore > 0 && f.interestScore < MIN_INTEREST_SCORE);
+
   const sorted = enrichedFindings
     .filter((f) => f.interestScore >= MIN_INTEREST_SCORE)
     .map((f) => ({
@@ -72,18 +91,21 @@ export async function runPipeline(
     }))
     .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .map((x) => x.finding);
-  const top = sorted.slice(0, topN);
+
+  const findings = sorted.slice(0, topN);
 
   logger.info('analysis.pipeline.done', {
     sha: ctx.sha,
-    findingsTotal: findings.length,
-    findingsSelected: top.length,
-    scores: top.map(f => ({
+    findingsTotal: allFindings.length,
+    findingsSelected: findings.length,
+    weakFindings: weakFindings.length,
+    deltaHits: deltaHits.length,
+    scores: findings.map(f => ({
       module: f.moduleId,
       score: f.interestScore,
       adjusted: f.interestScore / ((fireCounts.get(f.moduleId) ?? 0) + 1),
     })),
   });
 
-  return top;
+  return { findings, weakFindings, deltaHits };
 }

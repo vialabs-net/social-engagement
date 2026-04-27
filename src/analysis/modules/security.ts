@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface SecurityPattern {
@@ -88,7 +88,9 @@ export class SecurityModule implements CodeAnalyzer {
   readonly name = 'Security Patterns';
   readonly category = 'security' as const;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
+    let hasBilateral = false;
+
     for (const diff of ctx.diffs) {
       if (!diff.patch || diff.status === 'removed') continue;
 
@@ -120,9 +122,12 @@ export class SecurityModule implements CodeAnalyzer {
             },
           };
         }
+        if (pattern.detect(addedLines, diff.filename) && pattern.detect(removedLines, diff.filename)) {
+          hasBilateral = true;
+        }
       }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

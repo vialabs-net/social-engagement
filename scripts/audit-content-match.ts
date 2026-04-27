@@ -288,7 +288,7 @@ async function auditCommits(
   const results: Array<Record<string, unknown>> = [];
   for (const sha of shas) {
     const commit = await enrichCommit(github, owner, repoName, sha, getArg('--author') ?? tenant.github_username);
-    const findings = await runPipeline({
+    const { findings } = await runPipeline({
       diffs: commit.diffs,
       commitMessage: commit.message,
       commitBody: commit.body,

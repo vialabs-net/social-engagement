@@ -75,6 +75,7 @@ export const VoiceProfileSchema = z.object({
   always_hashtags: z.array(z.string()).max(10).optional(),
   recent_opening_sequence: z.array(z.string()).max(5).optional(),
   bootstrap_posts: z.array(BootstrapPostSchema).max(5).optional(),
+  post_language: z.enum(['en', 'en-b2', 'es']).default('en'),
 }).passthrough();
 
 export const DEFAULT_VOICE_PROFILE: VoiceProfile = {
@@ -87,6 +88,7 @@ export const DEFAULT_VOICE_PROFILE: VoiceProfile = {
     audience: 'mixed',
     skip_patterns: [],
   },
+  post_language: 'en',
 };
 
 export const ConfigSchema = z.object({

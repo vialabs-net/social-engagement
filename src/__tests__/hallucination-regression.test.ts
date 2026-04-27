@@ -158,10 +158,10 @@ describe('hallucination regression — korutx f9e98b1', () => {
     // The fixture has `searchService.query(sp)` (Alfresco SearchService),
     // no pg/postgres import, no new Pool(). Must not fire as PostgreSQL.
     const module = new IntegrationModule();
-    const finding = await module.analyze(KORUTX_CTX);
-    if (finding) {
-      expect(finding.finding.toLowerCase()).not.toContain('postgresql');
-      expect(finding.finding.toLowerCase()).not.toContain('postgres');
+    const result = await module.analyze(KORUTX_CTX);
+    if (result && 'finding' in result) {
+      expect(result.finding.toLowerCase()).not.toContain('postgresql');
+      expect(result.finding.toLowerCase()).not.toContain('postgres');
     }
   });
 

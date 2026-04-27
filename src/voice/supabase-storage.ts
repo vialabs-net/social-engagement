@@ -12,7 +12,12 @@ import type {
   RecentTopFinding,
   SlottedPost,
   StoredVoiceProfile,
+  SignalBankEntry,
+  SignalEvent,
+  DisparoAuditItem,
+  RoutingDecisionInput,
 } from './storage.js';
+import type { WeakSignal } from '../analysis/types.js';
 
 interface VoiceProfileRow {
   id: string;
@@ -494,6 +499,199 @@ export class SupabaseStorage implements IVoiceStorage {
 
     if (error) throw new Error(`getTakenSlots failed: ${error.message}`);
     return (data ?? []).map(r => new Date((r as { scheduled_at: string }).scheduled_at));
+  }
+
+  async depositSignal(signal: WeakSignal): Promise<void> {
+    const { error: eventError } = await this.db
+      .from('signal_events')
+      .insert({
+        tenant_id: this.tenantId,
+        github_author_login: signal.github_author_login,
+        repo: signal.repo,
+        topic: signal.topic,
+        commit_sha: signal.commit_sha,
+        strength: signal.strength,
+        pattern_kind: signal.pattern_kind,
+        affected_symbols: signal.affected_symbols,
+        specific_change: signal.specific_change,
+        source: signal.source,
+        accumulated_at: signal.accumulated_at,
+      });
+
+    if (eventError) throw new Error(`depositSignal (event) failed: ${eventError.message}`);
+
+    const existing = await this.getSignalBankEntry(signal.github_author_login, signal.repo, signal.topic);
+    if (existing) {
+      const { error } = await this.db
+        .from('signal_bank')
+        .update({
+          weight_sum: existing.weight_sum + signal.strength,
+          signal_count: existing.signal_count + 1,
+          last_signal_at: signal.accumulated_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      if (error) throw new Error(`depositSignal (bank update) failed: ${error.message}`);
+    } else {
+      const { error } = await this.db
+        .from('signal_bank')
+        .insert({
+          tenant_id: this.tenantId,
+          github_author_login: signal.github_author_login,
+          repo: signal.repo,
+          topic: signal.topic,
+          weight_sum: signal.strength,
+          signal_count: 1,
+          last_signal_at: signal.accumulated_at,
+        });
+      if (error) throw new Error(`depositSignal (bank insert) failed: ${error.message}`);
+    }
+  }
+
+  async getSignalBankEntry(authorLogin: string, repo: string, topic: string): Promise<SignalBankEntry | null> {
+    const { data, error } = await this.db
+      .from('signal_bank')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo)
+      .eq('topic', topic)
+      .maybeSingle();
+
+    if (error) throw new Error(`getSignalBankEntry failed: ${error.message}`);
+    return (data as SignalBankEntry | null) ?? null;
+  }
+
+  async getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]> {
+    const { data, error } = await this.db
+      .from('signal_bank')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo);
+
+    if (error) throw new Error(`getSignalBankEntries failed: ${error.message}`);
+    return (data ?? []) as SignalBankEntry[];
+  }
+
+  async getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]> {
+    const { data, error } = await this.db
+      .from('signal_events')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo)
+      .eq('topic', topic)
+      .eq('consumed', false)
+      .order('accumulated_at', { ascending: true });
+
+    if (error) throw new Error(`getUnconsumedSignals failed: ${error.message}`);
+    return (data ?? []) as SignalEvent[];
+  }
+
+  async consumeSignals(
+    postId: string,
+    authorLogin: string,
+    repo: string,
+    gatillador: string,
+    topics: string[],
+    signalIds: number[],
+    snapshot: DisparoAuditItem[],
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    const { error: eventError } = await this.db
+      .from('signal_events')
+      .update({ consumed: true, consumed_by_post_id: postId })
+      .in('id', signalIds)
+      .eq('tenant_id', this.tenantId);
+
+    if (eventError) throw new Error(`consumeSignals (events) failed: ${eventError.message}`);
+
+    const { error: auditError } = await this.db
+      .from('post_disparo_audit')
+      .insert({
+        post_id: postId,
+        tenant_id: this.tenantId,
+        github_author_login: authorLogin,
+        repo,
+        gatillador,
+        topics,
+        consumed_signal_ids: signalIds,
+        signal_bank_snapshot: snapshot,
+        fired_at: now,
+      });
+
+    if (auditError) throw new Error(`consumeSignals (audit) failed: ${auditError.message}`);
+
+    for (const topic of topics) {
+      const { error } = await this.db
+        .from('signal_bank')
+        .update({ weight_sum: 0, signal_count: 0, last_fired_at: now, updated_at: now })
+        .eq('tenant_id', this.tenantId)
+        .eq('github_author_login', authorLogin)
+        .eq('repo', repo)
+        .eq('topic', topic);
+
+      if (error) throw new Error(`consumeSignals (bank reset ${topic}) failed: ${error.message}`);
+    }
+  }
+
+  async rollbackPostConsumption(postId: string): Promise<void> {
+    const { data: audit, error: auditError } = await this.db
+      .from('post_disparo_audit')
+      .select('*')
+      .eq('post_id', postId)
+      .eq('tenant_id', this.tenantId)
+      .maybeSingle();
+
+    if (auditError) throw new Error(`rollbackPostConsumption (fetch audit) failed: ${auditError.message}`);
+    if (!audit) return;
+
+    const row = audit as {
+      github_author_login: string;
+      repo: string;
+      consumed_signal_ids: number[];
+      signal_bank_snapshot: DisparoAuditItem[];
+    };
+
+    const { error: eventError } = await this.db
+      .from('signal_events')
+      .update({ consumed: false, consumed_by_post_id: null })
+      .in('id', row.consumed_signal_ids)
+      .eq('tenant_id', this.tenantId);
+
+    if (eventError) throw new Error(`rollbackPostConsumption (events) failed: ${eventError.message}`);
+
+    for (const item of row.signal_bank_snapshot) {
+      const { error } = await this.db
+        .from('signal_bank')
+        .update({ weight_sum: item.weight_sum, updated_at: new Date().toISOString() })
+        .eq('tenant_id', this.tenantId)
+        .eq('github_author_login', row.github_author_login)
+        .eq('repo', row.repo)
+        .eq('topic', item.topic);
+
+      if (error) throw new Error(`rollbackPostConsumption (bank restore ${item.topic}) failed: ${error.message}`);
+    }
+  }
+
+  async recordRoutingDecision(input: RoutingDecisionInput): Promise<void> {
+    const { error } = await this.db
+      .from('routing_decisions_audit')
+      .insert({
+        tenant_id: this.tenantId,
+        github_author_login: input.github_author_login,
+        voice_post_id: input.voice_post_id,
+        commit_shas: input.commit_shas,
+        score_coherencia: input.score_coherencia,
+        score_structural: input.score_structural,
+        score_temporal: input.score_temporal,
+        score_lexical: input.score_lexical,
+        decision: input.decision,
+      });
+
+    if (error) throw new Error(`recordRoutingDecision failed: ${error.message}`);
   }
 
   private async fetchVoiceProfileRow(authorLogin: string | null): Promise<VoiceProfileRow | null> {

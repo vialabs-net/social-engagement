@@ -33,6 +33,11 @@ import {
   selectTopDailyCandidates,
   type RankedCommitCandidate,
 } from './worker/daily-post-selection.js';
+import { check, checkCrossVolume } from './analysis/accumulation-engine.js';
+import { consumeSignalsForPost } from './analysis/signal-consumer.js';
+import { generateSynthesisPost } from './ai/synthesis-generator.js';
+import type { WeakSignal, DeltaHit } from './analysis/types.js';
+import type { SignalBankEntry, SignalEvent } from './voice/storage.js';
 
 type TodayDraftState = Pick<VoicePost, 'created_at' | 'opening_move' | 'top_module_id'>;
 
@@ -181,7 +186,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const pipelineFindings = await runPipeline(
+      const { findings: pipelineFindings, weakFindings, deltaHits } = await runPipeline(
         {
           diffs: commit.diffs,
           commitMessage: commit.message,
@@ -194,6 +199,12 @@ async function main(): Promise<void> {
         modules,
         recentModuleIds,
       );
+
+      // Deposit weak signals (best-effort — never blocks post generation)
+      const depositNowIso = new Date().toISOString();
+      const depositAuthorLogin = commit.authorLogin ?? config.author.github_username;
+      await depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso)
+        .catch((err) => logger.warn('poll.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
       if (pipelineFindings.length === 0) {
         logger.info('poll.skip.no_findings', { sha: commit.sha });
@@ -335,6 +346,22 @@ async function main(): Promise<void> {
     }
   }
 
+  // Phase 3: accumulation check for each author processed in this run
+  const accumNowIso = new Date().toISOString();
+  for (const [, authorState] of authorStates) {
+    const authorLogin = authorState.authorLogin;
+    if (!authorLogin) continue;
+    if (authorState.todayDrafts.length >= dailyLimit) continue;
+
+    for (const repoKey of getAuthorRepos(candidatesByAuthor, authorState)) {
+      try {
+        await runAccumulationCheckPoll(storage, anthropic, config, tenantId, authorLogin, repoKey, authorState, accumNowIso);
+      } catch (err) {
+        logger.error('poll.accumulation.error', { authorLogin, repo: repoKey, error: String(err) });
+      }
+    }
+  }
+
   logger.info('poll.done');
 }
 
@@ -349,4 +376,153 @@ function toTodayDraftState(post: Pick<VoicePost, 'created_at' | 'opening_move' |
     opening_move: post.opening_move ?? null,
     top_module_id: post.top_module_id ?? null,
   };
+}
+
+const MODULE_PATTERN_KIND_POLL: Record<string, WeakSignal['pattern_kind']> = {
+  performance: 'behavioral_change',
+  security: 'contract_change',
+  design_patterns: 'new_abstraction',
+  testing: 'semantic_refactor',
+  type_system: 'contract_change',
+  integration: 'dependency_update',
+  devops: 'config_change',
+  dependency_health: 'dependency_update',
+  evolutionary: 'semantic_refactor',
+  clean_code: 'semantic_refactor',
+  api_design: 'contract_change',
+  observability: 'behavioral_change',
+  error_resilience: 'behavioral_change',
+  concurrency: 'behavioral_change',
+  dx: 'new_abstraction',
+  react_patterns: 'new_abstraction',
+  js_advanced: 'new_abstraction',
+  complexity: 'semantic_refactor',
+  ai_assisted: 'new_abstraction',
+  python_patterns: 'semantic_refactor',
+  go_patterns: 'semantic_refactor',
+  java_patterns: 'semantic_refactor',
+  elixir_patterns: 'semantic_refactor',
+  architecture_patterns: 'new_abstraction',
+};
+
+async function depositWeakSignalsPoll(
+  storage: IVoiceStorage,
+  weakFindings: Finding[],
+  deltaHits: DeltaHit[],
+  commitSha: string,
+  repo: string,
+  tenantId: string,
+  authorLogin: string,
+  nowIso: string,
+): Promise<void> {
+  const deposits: WeakSignal[] = [];
+
+  for (const wf of weakFindings) {
+    deposits.push({
+      topic: wf.moduleId,
+      strength: wf.interestScore,
+      pattern_kind: MODULE_PATTERN_KIND_POLL[wf.moduleId] ?? 'semantic_refactor',
+      source: 'finding',
+      affected_symbols: [],
+      specific_change: wf.finding.slice(0, 80),
+      commit_sha: commitSha,
+      repo,
+      tenant_id: tenantId,
+      github_author_login: authorLogin,
+      accumulated_at: nowIso,
+    });
+  }
+
+  for (const dh of deltaHits) {
+    deposits.push({
+      topic: dh.topic,
+      strength: dh.strength,
+      pattern_kind: 'behavioral_change',
+      source: 'delta_hit',
+      affected_symbols: [],
+      specific_change: 'bilateral pattern match — same pattern in added and removed lines',
+      commit_sha: commitSha,
+      repo,
+      tenant_id: tenantId,
+      github_author_login: authorLogin,
+      accumulated_at: nowIso,
+    });
+  }
+
+  await Promise.all(deposits.map((s) => storage.depositSignal(s)));
+}
+
+function getAuthorRepos(
+  candidatesByAuthor: Map<string, PollCommitCandidate[]>,
+  authorState: PollAuthorState,
+): string[] {
+  const repos = new Set<string>();
+  for (const candidates of candidatesByAuthor.values()) {
+    for (const c of candidates) {
+      if (c.authorLogin === authorState.authorLogin) {
+        repos.add(c.commit.repo);
+      }
+    }
+  }
+  return [...repos];
+}
+
+async function runAccumulationCheckPoll(
+  storage: IVoiceStorage,
+  generationAi: import('./ai/types.js').IAIClient,
+  config: import('./config/schema.js').Config,
+  tenantId: string,
+  authorLogin: string,
+  repo: string,
+  authorState: PollAuthorState,
+  nowIso: string,
+): Promise<void> {
+  const entries = await storage.getSignalBankEntries(authorLogin, repo);
+  if (entries.length === 0) return;
+
+  const firedEntries = entries.filter((e: SignalBankEntry) => check(e, nowIso).shouldFire);
+  const crossVolume = checkCrossVolume(entries, nowIso);
+
+  if (firedEntries.length === 0 && !crossVolume) return;
+
+  const firedTopics = firedEntries.length > 0
+    ? firedEntries.map((e: SignalBankEntry) => e.topic)
+    : entries.map((e: SignalBankEntry) => e.topic);
+
+  const allSignals: SignalEvent[] = [];
+  for (const topic of firedTopics) {
+    const signals = await storage.getUnconsumedSignals(authorLogin, repo, topic);
+    allSignals.push(...signals);
+  }
+
+  if (allSignals.length === 0) return;
+
+  logger.info('poll.accumulation.fire', {
+    authorLogin,
+    repo,
+    topics: firedTopics,
+    signalCount: allSignals.length,
+  });
+
+  const exposurePool = authorState.voiceStage !== 'cold'
+    ? await storage.getPublishedForExposure(authorLogin, 'linkedin')
+    : [];
+
+  const { draftId } = await generateSynthesisPost(generationAi, storage, {
+    authorLogin,
+    repo,
+    gatillador: 'focal',
+    topics: firedTopics,
+    signals: allSignals,
+    voiceProfile: authorState.voiceProfile,
+    voiceStage: authorState.voiceStage,
+    config,
+    exposurePool,
+    bootstrapPosts: authorState.voiceProfile.bootstrap_posts ?? [],
+    draftIndexToday: authorState.todayDrafts.length,
+  });
+
+  await consumeSignalsForPost(storage, draftId, 'focal', firedTopics, authorLogin, repo);
+
+  logger.info('poll.accumulation.done', { draftId, authorLogin, topics: firedTopics });
 }

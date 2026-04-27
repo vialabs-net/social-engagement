@@ -29,6 +29,11 @@ import {
   selectTopDailyCandidates,
   type RankedCommitCandidate,
 } from './daily-post-selection.js';
+import { check, checkCrossVolume } from '../analysis/accumulation-engine.js';
+import { consumeSignalsForPost } from '../analysis/signal-consumer.js';
+import { generateSynthesisPost } from '../ai/synthesis-generator.js';
+import type { WeakSignal, DeltaHit } from '../analysis/types.js';
+import type { SignalBankEntry, SignalEvent } from '../voice/storage.js';
 
 interface TenantRow {
   readonly id: string;
@@ -347,7 +352,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username);
+      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined);
 
       const filterResult = isInteresting(
         {
@@ -384,7 +389,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const pipelineFindings = await runPipeline(
+      const { findings: pipelineFindings, weakFindings, deltaHits } = await runPipeline(
         {
           diffs: commit.diffs,
           commitMessage: commit.message,
@@ -397,6 +402,12 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         MODULE_REGISTRY,
         recentModuleIds,
       );
+
+      // Deposit weak signals (best-effort — never blocks post generation)
+      const nowIso = new Date().toISOString();
+      const depositAuthorLogin = commit.authorLogin ?? tenant.github_username;
+      await depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso)
+        .catch((err) => logger.warn('worker.commit.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
       if (pipelineFindings.length === 0) {
         logger.info('worker.commit.skip.no_findings', { sha: commit.sha });
@@ -682,6 +693,32 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     }
   }
 
+  // Phase 3: accumulation check — fire synthesis if any topic crossed threshold
+  const accumNowIso = new Date().toISOString();
+  for (const [, authorState] of authorStates) {
+    const authorLogin = authorState.authorLogin;
+    if (!authorLogin) continue;
+    if (authorState.todayDrafts.length >= dailyLimit) continue;
+
+    try {
+      await runAccumulationCheck(
+        storage,
+        generationAi,
+        config,
+        authorLogin,
+        repo,
+        job.repo,
+        authorState,
+        owner,
+        github,
+        deps.appBaseUrl,
+        accumNowIso,
+      );
+    } catch (err) {
+      logger.error('worker.accumulation.error', { authorLogin, repo: job.repo, error: String(err) });
+    }
+  }
+
   logger.info('worker.job.done', { jobId });
 }
 
@@ -717,4 +754,156 @@ function toTodayDraftState(post: Pick<VoicePost, 'created_at' | 'opening_move' |
     opening_move: post.opening_move ?? null,
     top_module_id: post.top_module_id ?? null,
   };
+}
+
+const MODULE_PATTERN_KIND: Record<string, WeakSignal['pattern_kind']> = {
+  performance: 'behavioral_change',
+  security: 'contract_change',
+  design_patterns: 'new_abstraction',
+  testing: 'semantic_refactor',
+  type_system: 'contract_change',
+  integration: 'dependency_update',
+  devops: 'config_change',
+  dependency_health: 'dependency_update',
+  evolutionary: 'semantic_refactor',
+  clean_code: 'semantic_refactor',
+  api_design: 'contract_change',
+  observability: 'behavioral_change',
+  error_resilience: 'behavioral_change',
+  concurrency: 'behavioral_change',
+  dx: 'new_abstraction',
+  react_patterns: 'new_abstraction',
+  js_advanced: 'new_abstraction',
+  complexity: 'semantic_refactor',
+  ai_assisted: 'new_abstraction',
+  python_patterns: 'semantic_refactor',
+  go_patterns: 'semantic_refactor',
+  java_patterns: 'semantic_refactor',
+  elixir_patterns: 'semantic_refactor',
+  architecture_patterns: 'new_abstraction',
+};
+
+async function depositWeakSignals(
+  storage: IVoiceStorage,
+  weakFindings: Finding[],
+  deltaHits: DeltaHit[],
+  commitSha: string,
+  repo: string,
+  tenantId: string,
+  authorLogin: string,
+  nowIso: string,
+): Promise<void> {
+  const deposits: WeakSignal[] = [];
+
+  for (const wf of weakFindings) {
+    deposits.push({
+      topic: wf.moduleId,
+      strength: wf.interestScore,
+      pattern_kind: MODULE_PATTERN_KIND[wf.moduleId] ?? 'semantic_refactor',
+      source: 'finding',
+      affected_symbols: [],
+      specific_change: wf.finding.slice(0, 80),
+      commit_sha: commitSha,
+      repo,
+      tenant_id: tenantId,
+      github_author_login: authorLogin,
+      accumulated_at: nowIso,
+    });
+  }
+
+  for (const dh of deltaHits) {
+    deposits.push({
+      topic: dh.topic,
+      strength: dh.strength,
+      pattern_kind: 'behavioral_change',
+      source: 'delta_hit',
+      affected_symbols: [],
+      specific_change: 'bilateral pattern match — same pattern in added and removed lines',
+      commit_sha: commitSha,
+      repo,
+      tenant_id: tenantId,
+      github_author_login: authorLogin,
+      accumulated_at: nowIso,
+    });
+  }
+
+  await Promise.all(deposits.map((s) => storage.depositSignal(s)));
+}
+
+async function runAccumulationCheck(
+  storage: IVoiceStorage,
+  generationAi: import('../ai/types.js').IAIClient,
+  config: Config,
+  authorLogin: string,
+  repoName: string,
+  fullRepo: string,
+  authorState: AuthorGenerationState,
+  owner: string,
+  github: import('../github/client.js').GitHubClient,
+  appBaseUrl: string,
+  nowIso: string,
+): Promise<void> {
+  const entries = await storage.getSignalBankEntries(authorLogin, fullRepo);
+  if (entries.length === 0) return;
+
+  const firedEntries = entries.filter((e: SignalBankEntry) => check(e, nowIso).shouldFire);
+  const crossVolume = checkCrossVolume(entries, nowIso);
+
+  if (firedEntries.length === 0 && !crossVolume) return;
+
+  const firedTopics = firedEntries.length > 0
+    ? firedEntries.map((e: SignalBankEntry) => e.topic)
+    : entries.map((e: SignalBankEntry) => e.topic);
+
+  const gatillador: 'focal' | 'arco' = 'focal'; // arco routing requires EnrichedCommit retrieval (future)
+
+  const allSignals: SignalEvent[] = [];
+  for (const topic of firedTopics) {
+    const signals = await storage.getUnconsumedSignals(authorLogin, fullRepo, topic);
+    allSignals.push(...signals);
+  }
+
+  if (allSignals.length === 0) return;
+
+  logger.info('worker.accumulation.fire', {
+    authorLogin,
+    repo: fullRepo,
+    topics: firedTopics,
+    gatillador,
+    signalCount: allSignals.length,
+  });
+
+  const exposurePool = authorState.voiceStage !== 'cold'
+    ? await storage.getPublishedForExposure(authorLogin, 'linkedin')
+    : [];
+
+  const { draftId, bufferText } = await generateSynthesisPost(generationAi, storage, {
+    authorLogin,
+    repo: fullRepo,
+    gatillador,
+    topics: firedTopics,
+    signals: allSignals,
+    voiceProfile: authorState.voiceProfile,
+    voiceStage: authorState.voiceStage,
+    config,
+    exposurePool,
+    bootstrapPosts: authorState.memberBootstrapPosts.length > 0
+      ? authorState.memberBootstrapPosts
+      : authorState.voiceProfile.bootstrap_posts ?? [],
+    draftIndexToday: authorState.todayDrafts.length,
+  });
+
+  await consumeSignalsForPost(storage, draftId, gatillador, firedTopics, authorLogin, fullRepo);
+
+  // Notify review
+  const fakeCommit = {
+    sha: allSignals[allSignals.length - 1]?.commit_sha ?? 'synthesis',
+    message: `Synthesis post (${firedTopics.join(', ')})`,
+    authorLogin,
+    repo: fullRepo,
+  } as import('../github/commit-enricher.js').EnrichedCommit;
+
+  await notifyNewDraft(github, owner, config.github.notification_repo, fakeCommit, [], appBaseUrl);
+
+  logger.info('worker.accumulation.done', { draftId, authorLogin, topics: firedTopics });
 }

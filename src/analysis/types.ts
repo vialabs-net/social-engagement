@@ -59,6 +59,41 @@ export interface Finding {
 }
 
 /**
+ * Emitted by a module when it detects the same pattern in both added and removed
+ * lines — a mechanical substitution rather than a genuinely new introduction.
+ * The pipeline routes this into the SignalBank as a WeakSignal(strength=2)
+ * instead of triggering an immediate post.
+ */
+export interface DeltaHit {
+  readonly kind: 'delta_hit';
+  readonly topic: string;   // moduleId
+  readonly strength: 2;
+}
+
+/** Union type returned by module.analyze() */
+export type ModuleResult = Finding | DeltaHit | null;
+
+export interface WeakSignal {
+  topic: string;              // moduleId category (e.g. 'performance', 'security')
+  strength: number;           // 1–10
+  pattern_kind:
+    | 'new_abstraction'
+    | 'contract_change'
+    | 'semantic_refactor'
+    | 'config_change'
+    | 'dependency_update'
+    | 'behavioral_change';
+  source: 'finding' | 'delta_hit' | 'haiku_lazy';
+  affected_symbols: string[]; // names of functions/classes/types affected
+  specific_change: string;    // 1-line description: "timeout 5s→30s in fetchUser"
+  commit_sha: string;
+  repo: string;
+  tenant_id: string;
+  github_author_login: string;
+  accumulated_at: string;     // ISO timestamp for decay calculation
+}
+
+/**
  * The standard interface every analysis module implements.
  *
  * To add a new module:
@@ -83,10 +118,10 @@ export interface CodeAnalyzer {
   readonly applicableLanguages?: string[];
 
   /**
-   * Analyze the commit context and return a finding if something interesting
-   * was detected, or null if nothing noteworthy was found.
+   * Analyze the commit context and return a Finding, a DeltaHit (bilateral
+   * pattern match — mechanical substitution), or null (nothing of interest).
    *
    * Must not throw — failures are caught by the pipeline.
    */
-  analyze(ctx: AnalysisContext): Promise<Finding | null>;
+  analyze(ctx: AnalysisContext): Promise<ModuleResult>;
 }

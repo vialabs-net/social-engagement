@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ReactPattern {
@@ -91,9 +91,11 @@ export class ReactPatternsModule implements CodeAnalyzer {
   readonly name = 'React Patterns';
   readonly category = 'react_patterns' as const;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     const reactDiffs = ctx.diffs.filter((d) => REACT_FILE_REGEX.test(d.filename));
     if (reactDiffs.length === 0) return null;
+
+    let hasBilateral = false;
 
     for (const diff of reactDiffs) {
       if (!diff.patch || diff.status === 'removed') continue;
@@ -124,9 +126,12 @@ export class ReactPatternsModule implements CodeAnalyzer {
             },
           };
         }
+        if (pattern.detect(addedLines) && pattern.detect(removedLines)) {
+          hasBilateral = true;
+        }
       }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

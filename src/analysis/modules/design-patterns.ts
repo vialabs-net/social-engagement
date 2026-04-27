@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractAddedLines, extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface PatternSignature {
@@ -98,7 +98,7 @@ export class DesignPatternsModule implements CodeAnalyzer {
   // Paths that indicate auxiliary/migration/tooling files, not product architecture.
   private readonly AUXILIARY_PATH_RE = /\b(tools|scripts|migrations?|__tests__|\.github)\b/i;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     // Exclude auxiliary files from pattern detection; they are not product architecture.
     const productDiffs = ctx.diffs.filter(
       (d) => !this.AUXILIARY_PATH_RE.test(d.filename),
@@ -119,10 +119,15 @@ export class DesignPatternsModule implements CodeAnalyzer {
     // least one structural signal (class/interface declaration) before firing.
     const allNew = productDiffs.length > 0 && productDiffs.every((d) => d.status === 'added');
 
+    let hasBilateral = false;
+
     for (const pattern of PATTERNS) {
       const addedMatches = pattern.addedPatterns.filter(p => p.test(addedText));
       const removedMatches = pattern.addedPatterns.filter(p => p.test(removedText));
       if (addedMatches.length < pattern.minMatches || removedMatches.length >= pattern.minMatches) {
+        if (addedMatches.length >= pattern.minMatches && removedMatches.length >= pattern.minMatches) {
+          hasBilateral = true;
+        }
         continue;
       }
       if (allNew) {
@@ -147,6 +152,6 @@ export class DesignPatternsModule implements CodeAnalyzer {
       };
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }
