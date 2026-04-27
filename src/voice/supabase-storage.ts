@@ -513,6 +513,7 @@ export class SupabaseStorage implements IVoiceStorage {
         strength: signal.strength,
         pattern_kind: signal.pattern_kind,
         affected_symbols: signal.affected_symbols,
+        affected_files: signal.affected_files,
         specific_change: signal.specific_change,
         source: signal.source,
         accumulated_at: signal.accumulated_at,

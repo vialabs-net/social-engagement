@@ -141,6 +141,7 @@ export interface SignalEvent {
   readonly strength: number;
   readonly pattern_kind: WeakSignal['pattern_kind'];
   readonly affected_symbols: string[];
+  readonly affected_files: string[];
   readonly specific_change: string;
   readonly source: 'finding' | 'delta_hit' | 'haiku_lazy';
   readonly accumulated_at: string;

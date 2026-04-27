@@ -93,6 +93,7 @@ Evaluate if this commit contains semantic evidence for the topic "${topic}". Ret
     pattern_kind: pattern_kind as WeakSignal['pattern_kind'],
     source: 'haiku_lazy',
     affected_symbols: affected_symbols.filter((s): s is string => typeof s === 'string').slice(0, 3),
+    affected_files: commit.diffs.map((d) => d.filename),
     specific_change: specific_change.slice(0, 80),
     commit_sha: commit.sha,
     repo: commit.repo,

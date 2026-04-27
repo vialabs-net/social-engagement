@@ -406,7 +406,8 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       // Deposit weak signals (best-effort — never blocks post generation)
       const nowIso = new Date().toISOString();
       const depositAuthorLogin = commit.authorLogin ?? tenant.github_username;
-      await depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso)
+      const commitFiles = commit.diffs.map((d) => d.filename);
+      await depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso, commitFiles)
         .catch((err) => logger.warn('worker.commit.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
       if (pipelineFindings.length === 0) {
@@ -792,6 +793,7 @@ async function depositWeakSignals(
   tenantId: string,
   authorLogin: string,
   nowIso: string,
+  files: string[],
 ): Promise<void> {
   const deposits: WeakSignal[] = [];
 
@@ -802,6 +804,7 @@ async function depositWeakSignals(
       pattern_kind: MODULE_PATTERN_KIND[wf.moduleId] ?? 'semantic_refactor',
       source: 'finding',
       affected_symbols: [],
+      affected_files: files,
       specific_change: wf.finding.slice(0, 80),
       commit_sha: commitSha,
       repo,
@@ -818,6 +821,7 @@ async function depositWeakSignals(
       pattern_kind: 'behavioral_change',
       source: 'delta_hit',
       affected_symbols: [],
+      affected_files: files,
       specific_change: 'bilateral pattern match — same pattern in added and removed lines',
       commit_sha: commitSha,
       repo,
