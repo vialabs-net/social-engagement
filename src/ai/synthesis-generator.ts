@@ -16,7 +16,7 @@ import { detectOpeningMove } from '../voice/exposure.js';
 export interface SynthesisGeneratorInput {
   readonly authorLogin: string;
   readonly repo: string;
-  readonly gatillador: 'focal' | 'arco';
+  readonly gatillador: 'focal' | 'arco' | 'focal_multiple';
   readonly topics: string[];
   readonly signals: SignalEvent[];          // all unconsumed signals for the topic(s)
   readonly coherenceScore?: CoherenceScore; // only for arco

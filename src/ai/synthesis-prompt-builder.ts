@@ -13,7 +13,7 @@ export interface SynthesisCommitGroup {
 }
 
 export interface SynthesisPromptInput {
-  readonly gatillador: 'focal' | 'arco';
+  readonly gatillador: 'focal' | 'arco' | 'focal_multiple';
   readonly topics: string[];
   readonly commitGroups: SynthesisCommitGroup[]; // oldest first
   readonly coherenceScore?: CoherenceScore;       // only for arco

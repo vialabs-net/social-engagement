@@ -30,6 +30,7 @@ import {
   type RankedCommitCandidate,
 } from './daily-post-selection.js';
 import { check, checkCrossVolume } from '../analysis/accumulation-engine.js';
+import { scoreCoherenceFromSignals } from '../analysis/coherence-router.js';
 import { consumeSignalsForPost } from '../analysis/signal-consumer.js';
 import { generateSynthesisPost } from '../ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from '../analysis/types.js';
@@ -859,8 +860,6 @@ async function runAccumulationCheck(
     ? firedEntries.map((e: SignalBankEntry) => e.topic)
     : entries.map((e: SignalBankEntry) => e.topic);
 
-  const gatillador: 'focal' | 'arco' = 'focal'; // arco routing requires EnrichedCommit retrieval (future)
-
   const allSignals: SignalEvent[] = [];
   for (const topic of firedTopics) {
     const signals = await storage.getUnconsumedSignals(authorLogin, fullRepo, topic);
@@ -868,6 +867,27 @@ async function runAccumulationCheck(
   }
 
   if (allSignals.length === 0) return;
+
+  // Coherence routing: arco when >= 2 topics fired and commits share structural/temporal/lexical signal
+  const firedEntry = firedEntries[0];
+  const medianIntervalDays = firedEntry?.commit_frequency ?? null;
+  let gatillador: 'focal' | 'arco' | 'focal_multiple';
+  if (firedTopics.length >= 2) {
+    const coherence = scoreCoherenceFromSignals(allSignals, medianIntervalDays);
+    gatillador = coherence.decision === 'arco' ? 'arco' : 'focal_multiple';
+    await storage.recordRoutingDecision({
+      github_author_login: authorLogin,
+      voice_post_id: null,
+      commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
+      score_coherencia: coherence.total,
+      score_structural: coherence.structural,
+      score_temporal: coherence.temporal,
+      score_lexical: coherence.lexical,
+      decision: coherence.decision,
+    }).catch((err) => logger.warn('worker.accumulation.routing_record.failed', { error: String(err) }));
+  } else {
+    gatillador = 'focal';
+  }
 
   logger.info('worker.accumulation.fire', {
     authorLogin,
@@ -880,26 +900,19 @@ async function runAccumulationCheck(
   const exposurePool = authorState.voiceStage !== 'cold'
     ? await storage.getPublishedForExposure(authorLogin, 'linkedin')
     : [];
+  const bootstrapPosts = authorState.memberBootstrapPosts.length > 0
+    ? authorState.memberBootstrapPosts
+    : authorState.voiceProfile.bootstrap_posts ?? [];
 
-  const { draftId, bufferText } = await generateSynthesisPost(generationAi, storage, {
-    authorLogin,
-    repo: fullRepo,
-    gatillador,
-    topics: firedTopics,
-    signals: allSignals,
-    voiceProfile: authorState.voiceProfile,
-    voiceStage: authorState.voiceStage,
-    config,
-    exposurePool,
-    bootstrapPosts: authorState.memberBootstrapPosts.length > 0
-      ? authorState.memberBootstrapPosts
-      : authorState.voiceProfile.bootstrap_posts ?? [],
-    draftIndexToday: authorState.todayDrafts.length,
-  });
+  const topicsToGenerate: Array<{ topics: string[]; signals: SignalEvent[]; gatillador: 'focal' | 'arco' }> =
+    gatillador === 'focal_multiple'
+      ? firedTopics.map((topic) => ({
+          topics: [topic],
+          signals: allSignals.filter((s) => s.topic === topic),
+          gatillador: 'focal' as const,
+        }))
+      : [{ topics: firedTopics, signals: allSignals, gatillador: gatillador as 'focal' | 'arco' }];
 
-  await consumeSignalsForPost(storage, draftId, gatillador, firedTopics, authorLogin, fullRepo);
-
-  // Notify review
   const fakeCommit = {
     sha: allSignals[allSignals.length - 1]?.commit_sha ?? 'synthesis',
     message: `Synthesis post (${firedTopics.join(', ')})`,
@@ -907,7 +920,25 @@ async function runAccumulationCheck(
     repo: fullRepo,
   } as import('../github/commit-enricher.js').EnrichedCommit;
 
-  await notifyNewDraft(github, owner, config.github.notification_repo, fakeCommit, [], appBaseUrl);
+  for (let i = 0; i < topicsToGenerate.length; i++) {
+    const item = topicsToGenerate[i]!;
+    const { draftId } = await generateSynthesisPost(generationAi, storage, {
+      authorLogin,
+      repo: fullRepo,
+      gatillador: item.gatillador,
+      topics: item.topics,
+      signals: item.signals,
+      voiceProfile: authorState.voiceProfile,
+      voiceStage: authorState.voiceStage,
+      config,
+      exposurePool,
+      bootstrapPosts,
+      draftIndexToday: authorState.todayDrafts.length + i,
+    });
 
-  logger.info('worker.accumulation.done', { draftId, authorLogin, topics: firedTopics });
+    await consumeSignalsForPost(storage, draftId, item.gatillador, item.topics, authorLogin, fullRepo);
+    await notifyNewDraft(github, owner, config.github.notification_repo, fakeCommit, [], appBaseUrl);
+
+    logger.info('worker.accumulation.done', { draftId, authorLogin, topics: item.topics, gatillador: item.gatillador });
+  }
 }
