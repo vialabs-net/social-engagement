@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 // AI SDK imports in added lines
@@ -31,7 +31,7 @@ export class AiAssistedModule implements CodeAnalyzer {
   readonly name = 'AI-Assisted Development Detector';
   readonly category = 'ai_assisted' as const;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     const addedText = ctx.diffs.flatMap(d =>
       d.patch.split('\n')
         .filter(l => l.startsWith('+') && !l.startsWith('+++'))
@@ -40,7 +40,10 @@ export class AiAssistedModule implements CodeAnalyzer {
 
     const removedText = ctx.diffs.map(d => extractRemovedLines(d.patch)).join('\n');
 
-    const hasAiSdk = AI_SDK_PATTERNS.some(p => p.test(addedText)) && !AI_SDK_PATTERNS.some(p => p.test(removedText));
+    const sdkInAdded = AI_SDK_PATTERNS.some(p => p.test(addedText));
+    const sdkInRemoved = AI_SDK_PATTERNS.some(p => p.test(removedText));
+    const hasAiSdk = sdkInAdded && !sdkInRemoved;
+    const hasBilateral = sdkInAdded && sdkInRemoved;
 
     const aiFiles = ctx.diffs.filter(d =>
       AI_FILE_PATTERNS.some(p => p.test(d.filename))
@@ -92,6 +95,6 @@ export class AiAssistedModule implements CodeAnalyzer {
       };
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

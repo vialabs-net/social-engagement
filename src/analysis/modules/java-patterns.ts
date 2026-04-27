@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface JavaPattern {
@@ -119,7 +119,9 @@ export class JavaPatternsModule implements CodeAnalyzer {
   readonly category = 'java_patterns' as const;
   readonly applicableLanguages = ['Java', 'Kotlin'];
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
+    let hasBilateral = false;
+
     for (const diff of ctx.diffs) {
       if (!diff.patch || diff.status === 'removed') continue;
       if (diff.language !== 'Java' && diff.language !== 'Kotlin') continue;
@@ -150,9 +152,12 @@ export class JavaPatternsModule implements CodeAnalyzer {
             },
           };
         }
+        if (pattern.detect(addedLines, diff.patch) && pattern.detect(removedLines, diff.patch)) {
+          hasBilateral = true;
+        }
       }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }

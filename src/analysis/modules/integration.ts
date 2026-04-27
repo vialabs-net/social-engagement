@@ -1,4 +1,4 @@
-import type { CodeAnalyzer, AnalysisContext, Finding } from '../types.js';
+import type { CodeAnalyzer, AnalysisContext, Finding, ModuleResult } from '../types.js';
 import { extractRemovedLines, extractFirstHunkSnippet } from '../diff-parser.js';
 
 interface ServiceSignature {
@@ -105,7 +105,7 @@ export class IntegrationModule implements CodeAnalyzer {
   readonly name = 'Integration Detector';
   readonly category = 'integration' as const;
 
-  async analyze(ctx: AnalysisContext): Promise<Finding | null> {
+  async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
     const addedLines = ctx.diffs.flatMap(d =>
       d.patch.split('\n')
         .filter(l => l.startsWith('+') && !l.startsWith('+++'))
@@ -116,6 +116,8 @@ export class IntegrationModule implements CodeAnalyzer {
 
     const addedText = addedLines.join('\n');
     const removedText = ctx.diffs.map(d => extractRemovedLines(d.patch)).join('\n');
+
+    let hasBilateral = false;
 
     for (const service of KNOWN_SERVICES) {
       if (service.category === AI_CATEGORY) continue;
@@ -136,8 +138,11 @@ export class IntegrationModule implements CodeAnalyzer {
           },
         };
       }
+      if (service.patterns.some(p => p.test(addedText)) && service.patterns.some(p => p.test(removedText))) {
+        hasBilateral = true;
+      }
     }
 
-    return null;
+    return hasBilateral ? { kind: 'delta_hit' as const, topic: this.id, strength: 2 as const } : null;
   }
 }
