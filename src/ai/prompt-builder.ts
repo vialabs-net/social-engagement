@@ -1,6 +1,6 @@
 import type { Finding } from '../analysis/types.js';
 import type { BootstrapPost, Config, VoiceProfile } from '../config/schema.js';
-import type { EnrichedCommit } from '../github/commit-enricher.js';
+import type { EnrichedCommit, PrContext } from '../github/commit-enricher.js';
 import { rollVoiceDice } from '../voice/dice.js';
 import {
   moduleIdToLabel,
@@ -128,6 +128,7 @@ export function buildSystemPrompt(
   sections.push('- No meta-commentary or chain-of-thought');
   sections.push('- No engagement-bait questions ("Thoughts?", "What do you think?")');
   sections.push('- No code blocks');
+  sections.push('- No unsupported editorial opinions about code quality ("correct approach", "right way", "well-designed", "demonstrates senior-level judgment", "best practice"). Describe what was done and why (if stated in the commit). Do not evaluate whether the approach was correct.');
   sections.push('</never>');
 
   const preferenceLines = formatPreferenceLines(voiceProfile);
@@ -229,6 +230,11 @@ export function buildUserPrompt(
     parts.push('<industry_context>');
     parts.push(industryContext);
     parts.push('</industry_context>');
+  }
+
+  if (commit.prContext) {
+    parts.push('');
+    parts.push(buildContributorVoiceBlock(commit.prContext));
   }
 
   parts.push('');
@@ -575,6 +581,42 @@ function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
   }
 
   return null;
+}
+
+function buildContributorVoiceBlock(prContext: PrContext): string {
+  const { outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence } = prContext;
+
+  // Gate: medium confidence is not strong enough to assert incorporation in the post.
+  const effectiveOutcome =
+    outcome === 'closed_superseded' && supersededEvidence?.confidence !== 'high'
+      ? 'closed_unmerged'
+      : outcome;
+
+  const outcomeText =
+    effectiveOutcome === 'merged'
+      ? `merged into ${upstreamOwner}/${upstreamRepo} as PR #${prNumber}`
+    : effectiveOutcome === 'open'
+      ? `open PR #${prNumber} in ${upstreamOwner}/${upstreamRepo} (not yet merged — under review)`
+    : effectiveOutcome === 'closed_superseded'
+      ? `closed PR #${prNumber} in ${upstreamOwner}/${upstreamRepo} — the maintainers incorporated this work in a separate commit`
+    : `closed PR #${prNumber} in ${upstreamOwner}/${upstreamRepo} (not merged)`;
+
+  const maintainerLine =
+    effectiveOutcome === 'closed_superseded' && supersededEvidence?.maintainerComment
+      ? `Maintainer reference: "${supersededEvidence.maintainerComment}"\n`
+      : '';
+
+  return `<contributor_voice>
+This commit is from a fork. PR context: ${outcomeText}.
+PR title: "${prTitle}".
+${maintainerLine}
+Rules:
+- Cite the project as ${upstreamOwner}/${upstreamRepo} (the upstream), not the fork.
+- If outcome is open: describe the work as submitted and under review, not as accepted. Do not predict reviewer reactions. Acceptable: "I proposed X to ${upstreamOwner}/${upstreamRepo}." Not acceptable: "I added X to ${upstreamOwner}/${upstreamRepo}."
+- If outcome is merged: you may say the developer contributed to ${upstreamOwner}/${upstreamRepo}.
+- If outcome is closed_superseded: describe what the developer built. The maintainers incorporated this work — acknowledge the contribution accurately. Express the technical achievement, not the PR outcome.
+- If outcome is closed_unmerged: focus on what was built and the technical decisions made. Do not dwell on the PR being closed.
+</contributor_voice>`;
 }
 
 function buildLanguageInstruction(language: string | undefined): string | null {

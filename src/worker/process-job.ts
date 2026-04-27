@@ -347,7 +347,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username);
+      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined);
 
       const filterResult = isInteresting(
         {

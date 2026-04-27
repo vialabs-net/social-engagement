@@ -1,10 +1,92 @@
 import { Octokit } from '@octokit/rest';
 import { withRetry, GITHUB_RETRY_POLICY } from '../utils/retry.js';
 
+export interface RepoMeta {
+  readonly isPrivate: boolean;
+  readonly isFork: boolean;
+  readonly defaultBranch: string;
+  readonly parentOwner?: string;
+  readonly parentRepo?: string;
+}
+
+export interface PrLookupResult {
+  readonly number: number;
+  readonly title: string;
+  readonly state: 'OPEN' | 'CLOSED' | 'MERGED';
+  readonly url: string;
+  readonly upstreamOwner: string;
+  readonly upstreamRepo: string;
+  readonly timelineItems: ReadonlyArray<{
+    readonly body: string;
+    readonly authorLogin: string;
+  }>;
+}
+
+// Module-level caches survive across GitHubClient instances in the same process.
+// RepoMeta (fork flag + defaultBranch) is stable — TTL 7 days.
+// PR lookup TTL depends on outcome: open states change, final states don't.
+const repoMetaCache = new Map<string, { meta: RepoMeta; cachedAt: number }>();
+const prLookupCache = new Map<string, { results: PrLookupResult[]; cachedAt: number }>();
+
+const REPO_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PR_TTL_FINAL_MS  = 7 * 24 * 60 * 60 * 1000;  // merged / closed — immutable
+const PR_TTL_OPEN_MS   = 12 * 60 * 60 * 1000;       // open — maintainer may merge
+const PR_TTL_NONE_MS   = 1 * 60 * 60 * 1000;        // no PR found — branch may get one
+
+function prLookupTtl(results: PrLookupResult[]): number {
+  if (results.length === 0) return PR_TTL_NONE_MS;
+  const hasOpen = results.some((pr) => pr.state === 'OPEN');
+  return hasOpen ? PR_TTL_OPEN_MS : PR_TTL_FINAL_MS;
+}
+
+const PR_LOOKUP_GRAPHQL = `
+query ListPullsForRef($owner: String!, $name: String!, $refName: String!) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $refName) {
+      associatedPullRequests(states: [OPEN, CLOSED, MERGED], first: 5) {
+        nodes {
+          number
+          title
+          state
+          url
+          baseRepository {
+            owner { login }
+            name
+          }
+          timelineItems(itemTypes: [ISSUE_COMMENT], last: 20) {
+            nodes {
+              ... on IssueComment {
+                body
+                author { login }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`.trim();
+
+interface GraphqlPrNode {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  url: string;
+  baseRepository: { owner: { login: string }; name: string } | null;
+  timelineItems: {
+    nodes: Array<{
+      body?: string;
+      author?: { login: string } | null;
+    }>;
+  };
+}
+
 export class GitHubClient {
   private readonly octokit: Octokit;
+  private readonly token: string;
 
   constructor(token: string) {
+    this.token = token;
     this.octokit = new Octokit({ auth: token });
   }
 
@@ -61,11 +143,84 @@ export class GitHubClient {
     }, GITHUB_RETRY_POLICY, `github.getCommit(${owner}/${repo}@${sha})`);
   }
 
-  async getRepoVisibility(owner: string, repo: string): Promise<boolean> {
+  async getRepoMeta(owner: string, repo: string): Promise<RepoMeta> {
+    const key = `${owner}/${repo}`;
+    const cached = repoMetaCache.get(key);
+    if (cached && Date.now() - cached.cachedAt < REPO_META_TTL_MS) {
+      return cached.meta;
+    }
+
     return withRetry(async () => {
       const response = await this.octokit.repos.get({ owner, repo });
-      return response.data.private;
-    }, GITHUB_RETRY_POLICY, `github.getRepoVisibility(${owner}/${repo})`);
+      const data = response.data;
+      const meta: RepoMeta = {
+        isPrivate: data.private,
+        isFork: data.fork,
+        defaultBranch: data.default_branch,
+        parentOwner: data.fork ? (data.parent?.owner?.login ?? undefined) : undefined,
+        parentRepo: data.fork ? (data.parent?.name ?? undefined) : undefined,
+      };
+      repoMetaCache.set(key, { meta, cachedAt: Date.now() });
+      return meta;
+    }, GITHUB_RETRY_POLICY, `github.getRepoMeta(${owner}/${repo})`);
+  }
+
+  async listPullsForRef(
+    forkOwner: string,
+    forkRepo: string,
+    branchRef: string,
+  ): Promise<PrLookupResult[]> {
+    const key = `${forkOwner}/${forkRepo}#${branchRef}`;
+    const cached = prLookupCache.get(key);
+    if (cached && Date.now() - cached.cachedAt < prLookupTtl(cached.results)) {
+      return cached.results;
+    }
+
+    const response = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: PR_LOOKUP_GRAPHQL,
+        variables: { owner: forkOwner, name: forkRepo, refName: branchRef },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub GraphQL error: ${response.status} ${response.statusText}`);
+    }
+
+    const json = await response.json() as {
+      data?: { repository?: { ref?: { associatedPullRequests?: { nodes: GraphqlPrNode[] } } } };
+      errors?: Array<{ message: string }>;
+    };
+
+    if (json.errors?.length) {
+      throw new Error(`GitHub GraphQL errors: ${json.errors.map((e) => e.message).join('; ')}`);
+    }
+
+    const nodes = json.data?.repository?.ref?.associatedPullRequests?.nodes ?? [];
+    const results: PrLookupResult[] = nodes
+      .filter((node) => node.baseRepository !== null)
+      .map((node) => ({
+        number: node.number,
+        title: node.title,
+        state: node.state,
+        url: node.url,
+        upstreamOwner: node.baseRepository!.owner.login,
+        upstreamRepo: node.baseRepository!.name,
+        timelineItems: node.timelineItems.nodes
+          .filter((item) => item.body !== undefined)
+          .map((item) => ({
+            body: item.body!,
+            authorLogin: item.author?.login ?? '',
+          })),
+      }));
+
+    prLookupCache.set(key, { results, cachedAt: Date.now() });
+    return results;
   }
 
   async createIssue(
