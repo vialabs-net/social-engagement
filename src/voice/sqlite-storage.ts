@@ -847,6 +847,23 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve();
   }
 
+  adjustSignalBankMultiplier(authorLogin: string, repo: string, topic: string, factor: number): Promise<void> {
+    const row = this.db.prepare(`
+      SELECT id, multiplier FROM signal_bank
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+    `).get(this.tenantId, authorLogin, repo, topic) as { id: number; multiplier: number } | undefined;
+
+    if (!row) return Promise.resolve();
+
+    const clamped = Math.min(3.0, Math.max(0.1, row.multiplier * factor));
+    this.db.prepare(`
+      UPDATE signal_bank SET multiplier = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(clamped, row.id);
+
+    return Promise.resolve();
+  }
+
   /** Local-dev utility: read/write events_state */
   getEventsState(username: string): { last_event_id: string; last_event_etag: string | null } | null {
     return this.db.prepare(`SELECT * FROM events_state WHERE username = ?`).get(username) as
