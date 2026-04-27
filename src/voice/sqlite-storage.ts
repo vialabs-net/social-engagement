@@ -725,6 +725,14 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(row ?? null);
   }
 
+  getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM signal_bank
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+    `).all(this.tenantId, authorLogin, repo) as SqliteSignalBankRow[];
+    return Promise.resolve(rows);
+  }
+
   getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]> {
     const rows = this.db.prepare(`
       SELECT * FROM signal_events

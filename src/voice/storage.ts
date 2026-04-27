@@ -263,6 +263,9 @@ export interface IVoiceStorage {
   /** Read the current aggregated state for one (authorLogin, repo, topic) bucket. */
   getSignalBankEntry(authorLogin: string, repo: string, topic: string): Promise<SignalBankEntry | null>;
 
+  /** Read all signal_bank entries for an author across all topics in a given repo. */
+  getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]>;
+
   /** Return all unconsumed signal events for one (authorLogin, repo, topic) bucket. */
   getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]>;
 

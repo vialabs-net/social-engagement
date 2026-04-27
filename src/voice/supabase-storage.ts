@@ -562,6 +562,18 @@ export class SupabaseStorage implements IVoiceStorage {
     return (data as SignalBankEntry | null) ?? null;
   }
 
+  async getSignalBankEntries(authorLogin: string, repo: string): Promise<SignalBankEntry[]> {
+    const { data, error } = await this.db
+      .from('signal_bank')
+      .select('*')
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo);
+
+    if (error) throw new Error(`getSignalBankEntries failed: ${error.message}`);
+    return (data ?? []) as SignalBankEntry[];
+  }
+
   async getUnconsumedSignals(authorLogin: string, repo: string, topic: string): Promise<SignalEvent[]> {
     const { data, error } = await this.db
       .from('signal_events')
