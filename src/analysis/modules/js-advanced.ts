@@ -68,12 +68,19 @@ export class JsAdvancedModule implements CodeAnalyzer {
 
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines) && !pattern.detect(removedLines)) {
+          const triggerLine = addedLines.find((l) => pattern.detect([l]));
+          const jsFacts: string[] = [
+            `${pattern.name} detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) jsFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: jsFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {
