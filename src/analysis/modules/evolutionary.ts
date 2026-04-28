@@ -48,6 +48,11 @@ function detectModuleExtraction(ctx: AnalysisContext): Finding | null {
           finding: `module extraction: responsibilities moved from ${modified.filename} into ${added.filename}`,
           technicalDetail: `Module extraction — splitting responsibilities from ${modified.filename} into ${added.filename} to create a smaller, more focused boundary.`,
           plainLanguage: 'Extracting code into its own module is a sign of a codebase maturing. A file that does too much gets split into focused pieces so each one is easier to test, reason about, and evolve independently.',
+          verifiableFacts: [
+            `New file created: ${added.filename} (+${added.additions} lines, ${added.language ?? 'unknown language'}).`,
+            `Source file modified: ${modified.filename} (-${modified.deletions} lines removed).`,
+            `Both files share directory: ${getDirectory(added.filename) || '(root)'}.`,
+          ],
           interestScore: 7,
           contextHint: `${added.filename} in ${ctx.repo}`,
           retrievalTerms: getRetrievalTerms('module extraction', modified.filename, added.filename, ctx.commitMessage),
@@ -68,6 +73,10 @@ function detectFileRename(ctx: AnalysisContext): Finding | null {
     finding: `file renamed: ${renamed.filename}`,
     technicalDetail: 'File rename — improving naming to better reflect the module\'s responsibility and make the codebase more navigable.',
     plainLanguage: 'Renaming a file signals that the team is investing in clarity. Good names reduce the time it takes a new developer to find what they are looking for.',
+    verifiableFacts: [
+      `File renamed to: ${renamed.filename} (${renamed.language ?? 'unknown language'}).`,
+      `Changes alongside rename: +${renamed.additions}/-${renamed.deletions} lines.`,
+    ],
     interestScore: 5,
     contextHint: `${renamed.filename} in ${ctx.repo}`,
     retrievalTerms: getRetrievalTerms('file rename', renamed.filename, ctx.commitMessage),
@@ -98,12 +107,24 @@ function detectMigration(ctx: AnalysisContext): Finding | null {
   });
   if (!migration) return null;
 
+  const migrationFacts: string[] = [
+    `Migration file added: ${migration.filename} (+${migration.additions}/-${migration.deletions} lines).`,
+  ];
+  if (migration.filename.toLowerCase().endsWith('.sql')) {
+    migrationFacts.push('File has .sql extension — SQL schema migration.');
+  }
+  if (migration.patch) {
+    const ddlMatch = migration.patch.match(/\b(CREATE|ALTER|DROP)\s+(TABLE|INDEX|SCHEMA|VIEW|SEQUENCE)\s+\S+/i);
+    if (ddlMatch) migrationFacts.push(`DDL statement detected: "${ddlMatch[0].slice(0, 80)}".`);
+  }
+
   return {
     moduleId: 'evolutionary',
     aspect: 'migration file',
     finding: `migration added: ${migration.filename}`,
     technicalDetail: 'Database migration — a versioned schema change that evolves the database structure alongside application code.',
     plainLanguage: 'Migrations keep the database in sync with the code. Each migration is a reversible step — if something breaks, you roll back one version, not the entire schema.',
+    verifiableFacts: migrationFacts,
     interestScore: 8,
     contextHint: `${migration.filename} in ${ctx.repo}`,
     retrievalTerms: getRetrievalTerms('database migration', migration.filename, ctx.commitMessage),
@@ -131,6 +152,9 @@ function detectDeprecation(ctx: AnalysisContext): Finding | null {
       finding: `deprecation marker in ${diff.filename}`,
       technicalDetail: 'Deprecation — marking code as obsolete with a clear signal to stop using it before it is removed.',
       plainLanguage: 'Deprecation warnings give consumers time to migrate. Instead of a breaking removal, you mark it deprecated, document the replacement, and remove it in the next major version.',
+      verifiableFacts: [
+        `@deprecated marker added in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+      ],
       interestScore: 7,
       contextHint: `${diff.filename} in ${ctx.repo}`,
       retrievalTerms: getRetrievalTerms('deprecation', diff.filename, ctx.commitMessage),
@@ -152,6 +176,10 @@ function detectLargeDeletion(ctx: AnalysisContext): Finding | null {
     finding: `${large.deletions} lines removed from ${large.filename}`,
     technicalDetail: 'Large-scale deletion — significant code removal indicating simplification, dead code cleanup, or responsibility transfer.',
     plainLanguage: 'Deleting code is underrated. Every line removed is a line that no longer needs tests, reviews, or maintenance. The best refactor often makes the codebase smaller, not bigger.',
+    verifiableFacts: [
+      `${large.deletions} lines removed from ${large.filename} (+${large.additions}/-${large.deletions}, modified).`,
+      `Net change: ${large.additions - large.deletions > 0 ? '+' : ''}${large.additions - large.deletions} lines.`,
+    ],
     interestScore: 7,
     contextHint: `${large.filename} in ${ctx.repo}`,
     retrievalTerms: getRetrievalTerms('simplification', large.filename, ctx.commitMessage),

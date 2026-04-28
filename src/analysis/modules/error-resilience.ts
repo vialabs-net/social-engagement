@@ -96,12 +96,22 @@ export class ErrorResilienceModule implements CodeAnalyzer {
 
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines) && !pattern.detect(removedLines)) {
+          // Extract the specific triggering line for a concrete fact
+          const triggerLine = addedLines.find((l) => pattern.detect([l]));
+          const resilienceFacts: string[] = [
+            `${pattern.name} pattern introduced in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) {
+            resilienceFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+          }
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: resilienceFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {
