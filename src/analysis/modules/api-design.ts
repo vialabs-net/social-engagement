@@ -31,7 +31,8 @@ const PATTERNS: readonly ApiPattern[] = [
     explanation: 'REST routes use HTTP verbs (GET, POST, PUT, DELETE) to express intent. A well-named route like GET /users/:id is self-documenting — the verb says the action, the path says the resource.',
     detect: (lines) => lines.some((l) =>
       /\b(router|app)\.(get|post|put|patch|delete)\s*\(\s*['"`]\//.test(l) ||
-      /\b@(Get|Post|Put|Patch|Delete)\s*\(/.test(l),
+      /\b@(Get|Post|Put|Patch|Delete)\s*\(/.test(l) ||
+      /^export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)\s*\(/.test(l),
     ),
   },
   {
