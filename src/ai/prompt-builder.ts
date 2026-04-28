@@ -196,7 +196,13 @@ export function buildUserPrompt(
     parts.push(`<finding module="${finding.moduleId}" interest_score="${finding.interestScore}">`);
     parts.push(`Headline: ${finding.finding}`);
     parts.push(`Technical detail: ${finding.technicalDetail}`);
-    parts.push(`Plain language: ${finding.plainLanguage}`);
+    if (finding.verifiableFacts && finding.verifiableFacts.length > 0) {
+      parts.push('<facts>');
+      finding.verifiableFacts.forEach((fact, i) => parts.push(`${i + 1}. ${fact}`));
+      parts.push('</facts>');
+    } else {
+      parts.push(`Plain language: ${finding.plainLanguage}`);
+    }
     if (finding.contextHint) parts.push(`Context: ${finding.contextHint}`);
     if (finding.evidence?.before || finding.evidence?.after) {
       parts.push(`Evidence: before="${finding.evidence.before ?? ''}" after="${finding.evidence.after ?? ''}"`);
@@ -237,8 +243,15 @@ export function buildUserPrompt(
     parts.push(buildContributorVoiceBlock(commit.prContext));
   }
 
+  const hasVerifiableFacts = findings.some((f) => f.verifiableFacts && f.verifiableFacts.length > 0);
+
   parts.push('');
   parts.push('<task>');
+  if (hasVerifiableFacts) {
+    parts.push('Where a finding includes a <facts> block: you may state, rephrase, condense, or omit any listed fact. You may add ONE interpretive sentence connecting the facts to a broader engineering principle.');
+    parts.push('You MAY NOT: state structural facts not in the list; compare to a prior state unless the commit body explicitly states the prior behavior; make absence claims about code you cannot see; describe internal logic of files whose contents are not in the facts list.');
+    parts.push('');
+  }
   parts.push('Write one main post and one short variant.');
   parts.push('Feature the highest-value finding and only keep secondary findings when they sharpen the same story.');
   parts.push('Lead with the engineering decision or consequence, not the tool used to get there.');
