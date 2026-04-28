@@ -41,14 +41,14 @@ const TYPE_PATTERNS: TypePattern[] = [
   {
     name: 'utility type',
     pattern: /\b(Partial|Required|Readonly|Pick|Omit|Record|Exclude|Extract|NonNullable|ReturnType|Parameters|InstanceType)<\w/,
-    score: 6,
+    score: 7,
     technicalDetail: 'TypeScript utility types — derived types without duplication',
     explanation: 'Utility types derive new types from existing ones without repeating definitions. If the source type changes, all derived types update automatically — no manual sync required.',
   },
   {
     name: 'type guard',
     pattern: /\w+\s+is\s+\w+|\binstanceof\b[\s\S]{0,30}return true/,
-    score: 6,
+    score: 7,
     technicalDetail: 'TypeScript type guards, runtime type narrowing with compile-time awareness',
     explanation: 'Type guards let you narrow a type at runtime while keeping the compiler informed. After the guard, TypeScript knows exactly which type you\'re working with.',
   },
