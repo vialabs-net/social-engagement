@@ -857,6 +857,9 @@ async function runAccumulationCheck(
   appBaseUrl: string,
   nowIso: string,
 ): Promise<void> {
+  await storage.updateHalfLivesForAuthor(authorLogin, fullRepo)
+    .catch((err) => logger.warn('worker.accumulation.half_lives.failed', { authorLogin, repo: fullRepo, error: String(err) }));
+
   const entries = await storage.getSignalBankEntries(authorLogin, fullRepo);
   if (entries.length === 0) return;
 

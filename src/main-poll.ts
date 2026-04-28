@@ -491,6 +491,9 @@ async function runAccumulationCheckPoll(
   authorState: PollAuthorState,
   nowIso: string,
 ): Promise<void> {
+  await storage.updateHalfLivesForAuthor(authorLogin, repo)
+    .catch((err) => logger.warn('poll.accumulation.half_lives.failed', { authorLogin, repo, error: String(err) }));
+
   const entries = await storage.getSignalBankEntries(authorLogin, repo);
   if (entries.length === 0) return;
 

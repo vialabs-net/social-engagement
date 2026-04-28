@@ -18,6 +18,7 @@ import type {
   RoutingDecisionInput,
 } from './storage.js';
 import type { WeakSignal } from '../analysis/types.js';
+import { computeHalfLives } from '../analysis/accumulation-engine.js';
 
 interface VoiceProfileRow {
   id: string;
@@ -706,6 +707,58 @@ export class SupabaseStorage implements IVoiceStorage {
       .eq('id', existing.id);
 
     if (error) throw new Error(`adjustSignalBankMultiplier failed: ${error.message}`);
+  }
+
+  async updateHalfLivesForAuthor(authorLogin: string, repo: string): Promise<void> {
+    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.db
+      .from('signal_events')
+      .select('commit_sha, accumulated_at')
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo)
+      .gte('accumulated_at', since)
+      .order('accumulated_at', { ascending: true });
+
+    if (error) throw new Error(`updateHalfLivesForAuthor (query) failed: ${error.message}`);
+
+    // Deduplicate by commit_sha — keep earliest timestamp per commit
+    const byCommit = new Map<string, number>();
+    for (const row of data ?? []) {
+      const ts = new Date((row as { commit_sha: string; accumulated_at: string }).accumulated_at).getTime();
+      const sha = (row as { commit_sha: string }).commit_sha;
+      if (!byCommit.has(sha) || ts < byCommit.get(sha)!) byCommit.set(sha, ts);
+    }
+
+    const commitsCount = byCommit.size;
+    if (commitsCount < 2) return;
+
+    const timestamps = Array.from(byCommit.values()).sort((a, b) => a - b);
+    const intervals: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push((timestamps[i]! - timestamps[i - 1]!) / (24 * 60 * 60 * 1000));
+    }
+    intervals.sort((a, b) => a - b);
+    const mid = Math.floor(intervals.length / 2);
+    const medianIntervalDays = intervals.length % 2 === 0
+      ? ((intervals[mid - 1]! + intervals[mid]!) / 2)
+      : intervals[mid]!;
+
+    const { halfLifeSignal, halfLifeRefractory } = computeHalfLives(commitsCount, medianIntervalDays);
+
+    const { error: updateError } = await this.db
+      .from('signal_bank')
+      .update({
+        half_life_signal: halfLifeSignal,
+        half_life_refractory: halfLifeRefractory,
+        commit_frequency: medianIntervalDays,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo);
+
+    if (updateError) throw new Error(`updateHalfLivesForAuthor (update) failed: ${updateError.message}`);
   }
 
   private async fetchVoiceProfileRow(authorLogin: string | null): Promise<VoiceProfileRow | null> {

@@ -21,6 +21,7 @@ import type {
   RoutingDecisionInput,
 } from './storage.js';
 import type { WeakSignal } from '../analysis/types.js';
+import { computeHalfLives } from '../analysis/accumulation-engine.js';
 
 interface SqliteVoiceProfileRow {
   id: string;
@@ -860,6 +861,42 @@ export class SqliteStorage implements IVoiceStorage {
       UPDATE signal_bank SET multiplier = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(clamped, row.id);
+
+    return Promise.resolve();
+  }
+
+  updateHalfLivesForAuthor(authorLogin: string, repo: string): Promise<void> {
+    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = this.db.prepare(`
+      SELECT commit_sha, MIN(accumulated_at) as ts
+      FROM signal_events
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+        AND accumulated_at > ?
+      GROUP BY commit_sha
+      ORDER BY ts ASC
+    `).all(this.tenantId, authorLogin, repo, since) as { commit_sha: string; ts: string }[];
+
+    const commitsCount = rows.length;
+    if (commitsCount < 2) return Promise.resolve();
+
+    const timestamps = rows.map((r) => new Date(r.ts).getTime());
+    const intervals: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push((timestamps[i]! - timestamps[i - 1]!) / (24 * 60 * 60 * 1000));
+    }
+    intervals.sort((a, b) => a - b);
+    const mid = Math.floor(intervals.length / 2);
+    const medianIntervalDays = intervals.length % 2 === 0
+      ? ((intervals[mid - 1]! + intervals[mid]!) / 2)
+      : intervals[mid]!;
+
+    const { halfLifeSignal, halfLifeRefractory } = computeHalfLives(commitsCount, medianIntervalDays);
+
+    this.db.prepare(`
+      UPDATE signal_bank
+      SET half_life_signal = ?, half_life_refractory = ?, commit_frequency = ?, updated_at = datetime('now')
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+    `).run(halfLifeSignal, halfLifeRefractory, medianIntervalDays, this.tenantId, authorLogin, repo);
 
     return Promise.resolve();
   }

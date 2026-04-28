@@ -295,6 +295,14 @@ export interface IVoiceStorage {
   recordRoutingDecision(input: RoutingDecisionInput): Promise<void>;
 
   /**
+   * Recompute adaptive half-lives for all signal_bank rows of an author in a repo.
+   * Derives commit frequency from distinct commit_sha timestamps in signal_events
+   * (last 60 days), calls computeHalfLives(), and updates all rows for the author.
+   * No-op if fewer than 2 distinct commits exist.
+   */
+  updateHalfLivesForAuthor(authorLogin: string, repo: string): Promise<void>;
+
+  /**
    * Adjust signal_bank.multiplier for a specific (author, repo, topic) bucket.
    * factor < 1 lowers the threshold (fires more easily next time).
    * factor > 1 raises the threshold (fires less easily next time).
