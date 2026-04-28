@@ -2,10 +2,10 @@
  * replay-commit.ts — end-to-end replay of a commit through the full pipeline.
  *
  * Usage:
- *   npx tsx --env-file=.env.local scripts/replay-commit.ts <owner/repo> <sha> [author-login]
+ *   npx tsx --env-file=.env.local scripts/replay-commit.ts <owner/repo> <sha> [author-login] [branch-ref]
  *
  * Example:
- *   npx tsx --env-file=.env.local scripts/replay-commit.ts microboxlabs/ecm-coordinator f9e98b12fe4863adb1f764617558f38bfc1efc0d korutx
+ *   npx tsx --env-file=.env.local scripts/replay-commit.ts microboxlabs/ecm-coordinator f9e98b12fe4863adb1f764617558f38bfc1efc0d korutx refs/heads/JDWP-debug-port
  *
  * Captures all pipeline stages to stdout. Use > out.json to save.
  */
@@ -25,9 +25,10 @@ async function main(): Promise<void> {
   const fullRepo = args[0];
   const sha = args[1];
   const authorLogin = args[2] ?? null;
+  const branchRef = args[3] ?? undefined;
 
   if (!fullRepo || !sha || !fullRepo.includes('/')) {
-    console.error('Usage: npx tsx --env-file=.env.local scripts/replay-commit.ts <owner/repo> <sha> [author-login]');
+    console.error('Usage: npx tsx --env-file=.env.local scripts/replay-commit.ts <owner/repo> <sha> [author-login] [branch-ref]');
     process.exit(1);
   }
 
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   const githubClient = new GitHubClient(githubToken);
   let commit;
   try {
-    commit = await enrichCommit(githubClient, owner, repo, sha, authorLogin);
+    commit = await enrichCommit(githubClient, owner, repo, sha, authorLogin, branchRef);
   } catch (e) {
     console.error('enrichCommit failed:', String(e));
     process.exit(1);

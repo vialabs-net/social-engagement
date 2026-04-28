@@ -4,6 +4,7 @@ import type { GitHubClient } from './client.js';
 export interface PushEvent {
   id: string;
   repo: string;       // 'owner/repo'
+  ref?: string;       // e.g. 'refs/heads/feature-x'
   commits: PushCommit[];
   pushedAt: string;
 }
@@ -103,6 +104,7 @@ export async function pollNewPushEvents(
     result.push({
       id: e.id,
       repo: e.repo.name,
+      ref: e.payload.ref ?? undefined,
       commits,
       pushedAt: e.created_at,
     });
