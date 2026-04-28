@@ -88,7 +88,7 @@ export async function runPipeline(
     fireCounts.set(id, (fireCounts.get(id) ?? 0) + 1);
   }
 
-  const MIN_INTEREST_SCORE = 5;
+  const MIN_INTEREST_SCORE = 7;
   const enrichedFindings = enrichFindingsForRetrieval(allFindings, ctx);
 
   const weakFindings = enrichedFindings.filter((f) => f.interestScore > 0 && f.interestScore < MIN_INTEREST_SCORE);
