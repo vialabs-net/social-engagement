@@ -42,7 +42,12 @@ export class CleanCodeModule implements CodeAnalyzer {
       const addedLines = diff.patch.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
       const newFunctions = addedLines.filter(l => SMALL_FUNCTION_PATTERN.test(l));
 
-      if (newFunctions.length >= 3 && totalAfter <= totalBefore + 5) {
+      // Compact refactor: many new functions with near-zero net growth
+      const isCompactExtraction = newFunctions.length >= 3 && totalAfter <= totalBefore + 5;
+      // Structural refactor: extracts functions while reorganizing existing code (moderate net growth allowed)
+      const isStructuralExtraction = newFunctions.length >= 2 && totalBefore >= 5 && totalAfter <= totalBefore * 2;
+
+      if (isCompactExtraction || isStructuralExtraction) {
         return {
           moduleId: this.id,
           aspect: 'DRY / function extraction',
