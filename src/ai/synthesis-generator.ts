@@ -39,14 +39,24 @@ export interface SynthesisResult {
   readonly openingMove: string;
 }
 
+export interface BufferTextResult {
+  readonly bufferText: string;
+  readonly openingMove: string;
+  readonly representativeSha: string;
+}
+
 const XML_BUFFER_TEXT_RE = /<buffer_text>([\s\S]*?)<\/buffer_text>/;
 const XML_OPENING_MOVE_RE = /<opening_move>([\s\S]*?)<\/opening_move>/;
 
-export async function generateSynthesisPost(
+/**
+ * Calls Claude and parses the response — no storage writes.
+ * Use this for Phase 1 of focal_multiple batches so all texts are generated
+ * before any draft is saved, preventing partial state on Claude failures.
+ */
+export async function generateBufferText(
   client: IAIClient,
-  storage: IVoiceStorage,
   input: SynthesisGeneratorInput,
-): Promise<SynthesisResult> {
+): Promise<BufferTextResult> {
   const commitGroups = groupSignalsByCommit(input.signals);
   const representativeSha = commitGroups[commitGroups.length - 1]?.commitSha ?? 'synthesis';
 
@@ -67,7 +77,6 @@ export async function generateSynthesisPost(
 
   const systemPrompt = buildSynthesisSystemPrompt(promptInput);
   const userPrompt = buildSynthesisUserPrompt(promptInput);
-
   const raw = await client.complete(systemPrompt, userPrompt);
 
   const bufferTextMatch = XML_BUFFER_TEXT_RE.exec(raw);
@@ -99,20 +108,32 @@ export async function generateSynthesisPost(
   const openingMoveMatch = XML_OPENING_MOVE_RE.exec(raw);
   const openingMove = openingMoveMatch?.[1]?.trim() ?? 'unknown';
 
+  return { bufferText, openingMove, representativeSha };
+}
+
+/**
+ * Saves a pre-generated buffer text to storage and logs.
+ * Use this for Phase 2 of focal_multiple batches after all texts are ready.
+ */
+export async function persistSynthesisPost(
+  storage: IVoiceStorage,
+  input: SynthesisGeneratorInput,
+  result: BufferTextResult,
+): Promise<SynthesisResult> {
   const topTopic = input.topics[0] ?? null;
   const draftId = await storage.saveDraft({
-    commit_sha: representativeSha,
+    commit_sha: result.representativeSha,
     repo: input.repo,
     platform: 'linkedin',
-    ai_draft: bufferText,
+    ai_draft: result.bufferText,
     top_module_id: topTopic ?? undefined,
     findings_count: input.signals.length,
     author_login: input.authorLogin,
     generation_system: input.voiceStage === 'cold' ? 'v1' : 'v2_progressive',
-    opening_move: openingMove,
+    opening_move: result.openingMove,
   });
 
-  const detectedMove = detectOpeningMove(bufferText);
+  const detectedMove = detectOpeningMove(result.bufferText);
 
   logger.info('synthesis-generator.done', {
     draftId,
@@ -122,5 +143,14 @@ export async function generateSynthesisPost(
     openingMove: detectedMove,
   });
 
-  return { draftId, bufferText, openingMove: detectedMove };
+  return { draftId, bufferText: result.bufferText, openingMove: detectedMove };
+}
+
+export async function generateSynthesisPost(
+  client: IAIClient,
+  storage: IVoiceStorage,
+  input: SynthesisGeneratorInput,
+): Promise<SynthesisResult> {
+  const result = await generateBufferText(client, input);
+  return persistSynthesisPost(storage, input, result);
 }
