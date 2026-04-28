@@ -63,12 +63,19 @@ export class AiAssistedModule implements CodeAnalyzer {
                     : 'an AI SDK';
 
       const sdkDiff = ctx.diffs.find(d => AI_SDK_PATTERNS.some(p => p.test(d.patch)));
+      const importLine = addedText.split('\n').find(l => AI_SDK_PATTERNS.some(p => p.test(l)));
+      const sdkFacts: string[] = [
+        `${sdkName} SDK detected in ${sdkDiff?.filename ?? ctx.diffs[0]?.filename ?? 'unknown'} (${sdkDiff?.status ?? 'modified'}: +${sdkDiff?.additions ?? 0}/-${sdkDiff?.deletions ?? 0} lines).`,
+      ];
+      if (importLine) sdkFacts.push(`Import: "${importLine.trim().slice(0, 100)}".`);
+
       return {
         moduleId: this.id,
         aspect: 'AI SDK integration',
         finding: `Connected ${sdkName} — AI capabilities embedded in the application`,
         technicalDetail: `${sdkName} integration. AI-assisted development, human-AI collaboration. SDK initialized in the diff.`,
         plainLanguage: `The commit adds ${sdkName} as a capability layer in the application. Focus on the engineering decision: where the model sits in the flow, what constraints or retries were added, what cost boundary was introduced, and what the code now enables or prevents.`,
+        verifiableFacts: sdkFacts,
         interestScore: 8,
         contextHint: `${ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {
@@ -79,13 +86,16 @@ export class AiAssistedModule implements CodeAnalyzer {
     }
 
     if (hasAiFiles) {
-      const fileList = aiFiles.map(f => f.filename).join(', ');
       return {
         moduleId: this.id,
         aspect: 'AI system behavior',
-        finding: `Changed the instructions or control surface that shape AI behavior: ${fileList}`,
+        finding: `Changed the instructions or control surface that shape AI behavior: ${aiFiles.map(f => f.filename).join(', ')}`,
         technicalDetail: 'Prompting and AI workflow design. The diff changes instructions, model-routing code, or constraints that govern how the product behaves.',
         plainLanguage: 'Prompts and control surfaces are part of the product. Write about the behavior that changed: what became configurable, what guardrail was added, what failure mode was reduced, or what output became more reliable. The model is context, not the protagonist.',
+        verifiableFacts: [
+          `${aiFiles.length} AI-related file${aiFiles.length !== 1 ? 's' : ''} modified: ${aiFiles.map(f => f.filename).join(', ')}.`,
+          `Total: +${aiFiles.reduce((s, f) => s + f.additions, 0)}/-${aiFiles.reduce((s, f) => s + f.deletions, 0)} lines.`,
+        ],
         interestScore: 7,
         contextHint: `${aiFiles[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {

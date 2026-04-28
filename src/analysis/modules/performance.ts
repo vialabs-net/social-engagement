@@ -130,12 +130,21 @@ export class PerformanceModule implements CodeAnalyzer {
       for (const pattern of PATTERNS) {
         if (pattern.skipOnNewFile && diff.status === 'added') continue;
         if (pattern.detect(addedLines, diff.patch) && !pattern.detect(removedLines, diff.patch)) {
+          const triggerLine = addedLines.find((l) => pattern.detect([l], diff.patch));
+          const perfFacts: string[] = [
+            `${pattern.name} pattern detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) {
+            perfFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+          }
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `Detected ${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: perfFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {

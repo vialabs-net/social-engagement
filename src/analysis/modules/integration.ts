@@ -123,12 +123,19 @@ export class IntegrationModule implements CodeAnalyzer {
       if (service.category === AI_CATEGORY) continue;
       if (service.patterns.some(p => p.test(addedText)) && !service.patterns.some(p => p.test(removedText))) {
         const matchingDiff = ctx.diffs.find((diff) => service.patterns.some((pattern) => pattern.test(diff.patch)));
+        const importLine = addedLines.find(l => service.patterns.some(p => p.test(l)));
+        const intFacts: string[] = [
+          `${service.name} (${service.category}) import detected in ${matchingDiff?.filename ?? ctx.diffs[0]?.filename ?? 'unknown'} (${matchingDiff?.status ?? 'modified'}: +${matchingDiff?.additions ?? 0}/-${matchingDiff?.deletions ?? 0} lines).`,
+        ];
+        if (importLine) intFacts.push(`Import: "${importLine.trim().slice(0, 100)}".`);
+
         return {
           moduleId: this.id,
           aspect: `${service.name} integration`,
           finding: `Connected ${service.name} (${service.category})`,
           technicalDetail: `${service.name}, ${service.category}. New import/client initialization detected in the diff.`,
           plainLanguage: service.explanation,
+          verifiableFacts: intFacts,
           interestScore: service.score,
           contextHint: `${matchingDiff?.filename ?? ctx.diffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
           retrievalTerms: service.retrievalTerms,

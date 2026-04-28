@@ -82,12 +82,20 @@ export class TypeSystemModule implements CodeAnalyzer {
 
     for (const tp of TYPE_PATTERNS) {
       if (tp.pattern.test(addedText) && !tp.pattern.test(removedText)) {
+        const matchedText = addedText.match(tp.pattern)?.[0]?.slice(0, 80);
+        const totalAdd = tsDiffs.reduce((s, d) => s + d.additions, 0);
+        const tsFacts: string[] = [
+          `${tp.name} detected in ${primaryFile} (+${totalAdd} lines across ${tsDiffs.length} TypeScript file${tsDiffs.length !== 1 ? 's' : ''}).`,
+        ];
+        if (matchedText) tsFacts.push(`Matched: "${matchedText}".`);
+
         return {
           moduleId: this.id,
           aspect: tp.name,
           finding: `Used TypeScript ${tp.name} — type system encodes correctness constraints`,
           technicalDetail: tp.technicalDetail,
           plainLanguage: tp.explanation,
+          verifiableFacts: tsFacts,
           interestScore: tp.score,
           contextHint: `${primaryFile} in ${ctx.repo}`,
           evidence: {

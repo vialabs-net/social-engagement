@@ -109,12 +109,21 @@ export class SecurityModule implements CodeAnalyzer {
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines, diff.filename) && !pattern.detect(removedLines, diff.filename)) {
           const prefix = pattern.isConcern ? 'Potential concern' : 'Added';
+          const triggerLine = addedLines.find((l) => pattern.detect([l], diff.filename));
+          const secFacts: string[] = [
+            `${prefix}: ${pattern.name} in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) {
+            secFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+          }
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `${prefix}: ${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: secFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             retrievalTerms: pattern.retrievalTerms ? [...pattern.retrievalTerms] : undefined,
@@ -141,6 +150,11 @@ export class SecurityModule implements CodeAnalyzer {
           finding: `Fixed SQL injection: replaced string interpolation with parameterized queries in ${diff.filename}`,
           technicalDetail: 'SQL injection remediation — string-interpolated query replaced with parameterized form, separating data from SQL code.',
           plainLanguage: 'The developer replaced raw string interpolation in SQL with parameterized queries. This eliminates the injection surface entirely — user input can no longer alter the query structure.',
+          verifiableFacts: [
+            `SQL injection fix in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+            'Removed: string-interpolated SQL query (template literal or string concatenation).',
+            'Added: parameterized query form (positional placeholders or query builder).',
+          ],
           interestScore: 10,
           contextHint: `${diff.filename} in ${ctx.repo}`,
           evidence: {

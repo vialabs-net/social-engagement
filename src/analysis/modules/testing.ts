@@ -38,12 +38,18 @@ export class TestingModule implements CodeAnalyzer {
 
     if (hasParametrized) {
       const edgePart = hasEdgeCases ? ', covering boundary and edge case scenarios' : '';
+      const paramFacts: string[] = [
+        `Parametrized tests in ${testDiffs[0]?.filename ?? 'unknown'}: ~${testCount} test case${testCount !== 1 ? 's' : ''} across ${testDiffs.length} file${testDiffs.length !== 1 ? 's' : ''} (+${totalNewTestLines} lines).`,
+      ];
+      if (hasEdgeCases) paramFacts.push('Edge case keywords also detected in the same test diff.');
+
       return {
         moduleId: this.id,
         aspect: 'parametrized test coverage',
         finding: `Added parametrized tests across ${testDiffs.length} test file(s) — multiple input scenarios validated systematically${edgePart}`,
         technicalDetail: `Parametrized testing (test.each/pytest.parametrize), data-driven test cases, boundary value analysis. ~${testCount} test cases added.`,
         plainLanguage: 'Parametrized tests express "for all these inputs, I expect these outputs" in one readable block. They make it explicit which specific values were chosen for testing and why — especially useful for numeric boundaries, currency rounding, and state transitions.',
+        verifiableFacts: paramFacts,
         interestScore: 8,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {
@@ -62,6 +68,10 @@ export class TestingModule implements CodeAnalyzer {
         finding: `Added tests covering edge cases: ${uniqueKeywords.join(', ')} scenarios in ${testDiffs.length} file(s)`,
         technicalDetail: `Edge case testing, boundary value analysis. Keywords detected: ${uniqueKeywords.join(', ')}. ~${testCount} test cases.`,
         plainLanguage: `The tests specifically target the scenarios that most implementations get wrong: ${uniqueKeywords.join(', ')}. Edge cases don't throw exceptions — they produce plausible-looking wrong answers until someone checks the math.`,
+        verifiableFacts: [
+          `Edge case tests in ${testDiffs[0]?.filename ?? 'unknown'}: ~${testCount} test case${testCount !== 1 ? 's' : ''}, +${totalNewTestLines} lines.`,
+          `Edge case keywords detected: ${uniqueKeywords.join(', ')}.`,
+        ],
         interestScore: 7,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {
@@ -72,12 +82,17 @@ export class TestingModule implements CodeAnalyzer {
     }
 
     if (testCount >= 5 || testDiffs.length >= 2) {
+      const totalLines = testDiffs.reduce((s, d) => s + d.additions, 0);
       return {
         moduleId: this.id,
         aspect: 'test coverage expansion',
         finding: `Added ~${testCount} new test case(s) across ${testDiffs.length} file(s)${hasMocks ? ' with mock isolation' : ''}`,
-        technicalDetail: `Unit testing${hasMocks ? ', mock/stub isolation' : ''}. ${testCount} test cases, ${testDiffs.reduce((s, d) => s + d.additions, 0)} lines added.`,
+        technicalDetail: `Unit testing${hasMocks ? ', mock/stub isolation' : ''}. ${testCount} test cases, ${totalLines} lines added.`,
         plainLanguage: `The commit expanded the test suite with ${testCount} new cases${hasMocks ? ', using mocks to isolate the unit under test from its dependencies' : ''}. More tests mean faster feedback when something breaks.`,
+        verifiableFacts: [
+          `~${testCount} new test case${testCount !== 1 ? 's' : ''} across ${testDiffs.length} file${testDiffs.length !== 1 ? 's' : ''} (+${totalLines} lines).`,
+          ...(hasMocks ? ['Mock/stub isolation detected (jest.mock, vi.mock, or sinon).'] : []),
+        ],
         interestScore: 4,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {

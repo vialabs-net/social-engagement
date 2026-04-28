@@ -138,12 +138,19 @@ export class DevopsModule implements CodeAnalyzer {
 
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines, diff.filename) && !pattern.detect(removedLines, diff.filename)) {
+          const triggerLine = addedLines.find((l) => pattern.detect([l], diff.filename));
+          const devopsFacts: string[] = [
+            `${pattern.name} detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) devopsFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: devopsFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {

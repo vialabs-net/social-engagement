@@ -22,12 +22,18 @@ export class CleanCodeModule implements CodeAnalyzer {
           const percentReduced = Math.round(reductionRatio * 100);
           const usesLookup = LOOKUP_TABLE_PATTERN.test(diff.patch);
 
+          const kissFacts: string[] = [
+            `${diff.filename} modified: +${totalAfter} added, -${totalBefore} removed (${percentReduced}% net reduction).`,
+          ];
+          if (usesLookup) kissFacts.push('Lookup table pattern (new Map or as const object) detected in diff.');
+
           return {
             moduleId: this.id,
             aspect: 'KISS / line reduction',
             finding: `Reduced ${diff.filename} by ${percentReduced}% — from ~${totalBefore} to ~${totalAfter} lines${usesLookup ? ' using a lookup table' : ''}`,
             technicalDetail: `KISS principle, ${usesLookup ? 'lookup table pattern, ' : ''}cognitive complexity reduction. ${totalBefore}→${totalAfter} lines (${percentReduced}% reduction).`,
             plainLanguage: `The commit made the code significantly simpler — ${percentReduced}% fewer lines with the same behavior. ${usesLookup ? 'A nested conditional tree was replaced with a lookup table, which is readable as data rather than traced as logic.' : 'The simplification reduces the cognitive load for anyone reading or modifying this code in the future.'}`,
+            verifiableFacts: kissFacts,
             interestScore: Math.min(9, 5 + Math.floor(reductionRatio * 8)),
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {
@@ -48,12 +54,23 @@ export class CleanCodeModule implements CodeAnalyzer {
       const isStructuralExtraction = newFunctions.length >= 2 && totalBefore >= 5 && totalAfter <= totalBefore * 2;
 
       if (isCompactExtraction || isStructuralExtraction) {
+        const fnNames = newFunctions
+          .slice(0, 5)
+          .map((l) => l.match(/(?:function\s+|const\s+)(\w+)/)?.[1])
+          .filter((n): n is string => Boolean(n));
+
+        const dryFacts: string[] = [
+          `${newFunctions.length} new function signatures detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+        ];
+        if (fnNames.length > 0) dryFacts.push(`Named functions added: ${fnNames.join(', ')}.`);
+
         return {
           moduleId: this.id,
           aspect: 'DRY / function extraction',
           finding: `Extracted ${newFunctions.length} new functions in ${diff.filename} — single-responsibility refactoring`,
           technicalDetail: `DRY principle, single responsibility principle, extract method refactoring. ${newFunctions.length} new functions added.`,
           plainLanguage: `The commit broke a larger block of logic into ${newFunctions.length} focused functions, each with one job. Each function can now be read, tested, and changed independently.`,
+          verifiableFacts: dryFacts,
           interestScore: 6,
           contextHint: `${diff.filename} in ${ctx.repo}`,
         };

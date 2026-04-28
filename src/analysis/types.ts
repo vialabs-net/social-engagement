@@ -48,7 +48,9 @@ export interface Finding {
   aspect: string;          // human-readable module label
   finding: string;         // what was found (for Claude's context)
   technicalDetail: string; // technical terms, metrics, named concepts
-  plainLanguage: string;   // what Claude should explain in the post
+  plainLanguage: string;   // fallback when verifiableFacts is absent
+  /** Diff-derived facts Claude may cite. When present, replaces plainLanguage. */
+  verifiableFacts?: readonly string[];
   interestScore: number;   // 1–10
   contextHint?: string;    // e.g. "ReconciliationService.ts in vialabs-net/scrappers"
   retrievalText?: string;  // richer retrieval-oriented text for article matching

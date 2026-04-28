@@ -137,12 +137,30 @@ export class DesignPatternsModule implements CodeAnalyzer {
         if (!hasStructural) continue;
       }
 
+      const totalAdd = productDiffs.reduce((s, d) => s + d.additions, 0);
+      const totalDel = productDiffs.reduce((s, d) => s + d.deletions, 0);
+      const dpFacts: string[] = [
+        `${pattern.name} pattern structural signatures detected across ${productDiffs.length} file${productDiffs.length !== 1 ? 's' : ''}: +${totalAdd}/-${totalDel} lines.`,
+        `Primary file: ${primaryFile}.`,
+      ];
+
+      // Extract specific interface/class name that matched the structural patterns
+      const ifaceMatch = addedText.match(/\binterface\s+(\w+)/i)?.[1];
+      if (ifaceMatch) dpFacts.push(`Interface "${ifaceMatch}" introduced.`);
+
+      const implMatches = [...addedText.matchAll(/\bimplements\s+(\w+)/gi)];
+      if (implMatches.length > 0) {
+        const implNames = [...new Set(implMatches.map((m) => m[1]))].slice(0, 4);
+        dpFacts.push(`${implMatches.length} implementation${implMatches.length !== 1 ? 's' : ''} via "implements": ${implNames.join(', ')}.`);
+      }
+
       return {
         moduleId: this.id,
         aspect: `${pattern.name} pattern`,
         finding: `Implemented ${pattern.name} pattern — ${pattern.principle}`,
         technicalDetail: `${pattern.name} pattern, ${pattern.principle}. Detected via structural signatures in the diff.`,
         plainLanguage: pattern.explanation,
+        verifiableFacts: dpFacts,
         interestScore: pattern.interestScore,
         contextHint: `${primaryFile} in ${ctx.repo}`,
         evidence: {

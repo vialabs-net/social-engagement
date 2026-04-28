@@ -125,12 +125,22 @@ export class ArchitecturePatternsModule implements CodeAnalyzer {
         // Line-content patterns: skip if the same pattern fires on removed lines too.
         const firesWithoutLines = pattern.detect([], diff.filename, allFilenames);
         if (!firesWithoutLines && pattern.detect(removedLines, diff.filename, allFilenames)) continue;
+
+        const triggerLine = firesWithoutLines
+          ? undefined
+          : addedLines.find((l) => pattern.detect([l], diff.filename, allFilenames));
+        const archFacts: string[] = [
+          `${pattern.name} detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+        ];
+        if (triggerLine) archFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+
         return {
           moduleId: this.id,
           aspect: pattern.name,
           finding: `Detected ${pattern.name} in ${diff.filename}`,
           technicalDetail: pattern.technicalDetail,
           plainLanguage: pattern.explanation,
+          verifiableFacts: archFacts,
           interestScore: pattern.score,
           contextHint: `${diff.filename} in ${ctx.repo}`,
           evidence: {

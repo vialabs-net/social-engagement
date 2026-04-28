@@ -138,12 +138,19 @@ export class JavaPatternsModule implements CodeAnalyzer {
 
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines, diff.patch) && !pattern.detect(removedLines, diff.patch)) {
+          const triggerLine = addedLines.find((l) => pattern.detect([l], diff.patch));
+          const javaFacts: string[] = [
+            `${pattern.name} detected in ${diff.filename} (${diff.status}: +${diff.additions}/-${diff.deletions} lines).`,
+          ];
+          if (triggerLine) javaFacts.push(`Trigger: "${triggerLine.trim().slice(0, 100)}".`);
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `Detected ${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: javaFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
             evidence: {
