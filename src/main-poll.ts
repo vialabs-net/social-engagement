@@ -36,8 +36,8 @@ import {
 import { check, checkCrossVolume, shouldRunHaikuLazy } from './analysis/accumulation-engine.js';
 import { extractSignalFromDiff } from './analysis/signal-extractor.js';
 import { scoreCoherenceFromSignals } from './analysis/coherence-router.js';
-import { consumeSignalsForPost, type Gatillador } from './analysis/signal-consumer.js';
-import { generateSynthesisPost } from './ai/synthesis-generator.js';
+import { consumeSignalsForPost, rollbackPostConsumption, type Gatillador } from './analysis/signal-consumer.js';
+import { generateBufferText, persistSynthesisPost } from './ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from './analysis/types.js';
 import type { SignalBankEntry, SignalEvent } from './voice/storage.js';
 
@@ -587,24 +587,40 @@ async function runAccumulationCheckPoll(
         }))
       : [{ topics: firedTopics, signals: allSignals, gatillador: gatillador as 'focal' | 'arco' }];
 
-  for (let i = 0; i < topicsToGenerate.length; i++) {
-    const item = topicsToGenerate[i]!;
-    const { draftId } = await generateSynthesisPost(generationAi, storage, {
-      authorLogin,
-      repo,
-      gatillador: item.gatillador,
-      topics: item.topics,
-      signals: item.signals,
-      voiceProfile: authorState.voiceProfile,
-      voiceStage: authorState.voiceStage,
-      config,
-      exposurePool,
-      bootstrapPosts: authorState.voiceProfile.bootstrap_posts ?? [],
-      draftIndexToday: authorState.todayDrafts.length + i,
-    });
+  const synthesisInputs = topicsToGenerate.map((item, i) => ({
+    authorLogin,
+    repo,
+    gatillador: item.gatillador,
+    topics: item.topics,
+    signals: item.signals,
+    voiceProfile: authorState.voiceProfile,
+    voiceStage: authorState.voiceStage,
+    config,
+    exposurePool,
+    bootstrapPosts: authorState.voiceProfile.bootstrap_posts ?? [],
+    draftIndexToday: authorState.todayDrafts.length + i,
+  }));
 
-    await consumeSignalsForPost(storage, draftId, item.gatillador, item.topics, authorLogin, repo);
+  // Phase 1: generate all buffer texts in parallel — fail-fast, no DB writes.
+  // If any Claude call fails, no draft is saved for any topic.
+  const generatedTexts = await Promise.all(synthesisInputs.map((inp) => generateBufferText(generationAi, inp)));
 
-    logger.info('poll.accumulation.done', { draftId, authorLogin, topics: item.topics, gatillador: item.gatillador });
+  // Phase 2: persist sequentially; roll back consumed signals if a later item fails.
+  const savedDraftIds: string[] = [];
+  try {
+    for (let i = 0; i < topicsToGenerate.length; i++) {
+      const item = topicsToGenerate[i]!;
+      const { draftId } = await persistSynthesisPost(storage, synthesisInputs[i]!, generatedTexts[i]!);
+      await consumeSignalsForPost(storage, draftId, item.gatillador, item.topics, authorLogin, repo);
+      savedDraftIds.push(draftId);
+      logger.info('poll.accumulation.done', { draftId, authorLogin, topics: item.topics, gatillador: item.gatillador });
+    }
+  } catch (err) {
+    for (const draftId of savedDraftIds) {
+      await rollbackPostConsumption(storage, draftId, 'focal_multiple_partial_failure')
+        .catch((e) => logger.error('poll.accumulation.rollback.failed', { draftId, error: String(e) }));
+    }
+    logger.error('poll.accumulation.failed', { authorLogin, repo, error: String(err) });
+    throw err;
   }
 }
