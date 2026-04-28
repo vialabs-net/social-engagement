@@ -16,6 +16,7 @@ import { notifyNewDraft } from '../review/notifier.js';
 import { SupabaseStorage } from '../voice/supabase-storage.js';
 import { getInstallationToken } from './github-app-auth.js';
 import { logger } from '../utils/logger.js';
+import { bestEffort } from '../utils/best-effort.js';
 import { ConfigSchema } from '../config/schema.js';
 import type { BootstrapPost, Config, VoiceProfile } from '../config/schema.js';
 import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
@@ -411,14 +412,16 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       const nowIso = new Date().toISOString();
       const depositAuthorLogin = commit.authorLogin ?? tenant.github_username;
       const commitFiles = commit.diffs.map((d) => d.filename);
-      await depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso, commitFiles)
-        .catch((err) => logger.warn('worker.commit.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
+      bestEffort('worker.commit.deposit_signal',
+        depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso, commitFiles),
+        { sha: commit.sha });
 
       // Haiku lazy: semantically evaluate topics near threshold that scored 0 in regex pipeline (best-effort)
       {
         const firedTopicsThisCommit = [...new Set([...weakFindings.map((f) => f.moduleId), ...deltaHits.map((d) => d.topic)])];
-        runHaikuLazy(haikuAi, storage, commit, tenant.id, depositAuthorLogin, firedTopicsThisCommit, nowIso)
-          .catch((err) => logger.warn('worker.commit.haiku_lazy.failed', { sha: commit.sha, error: String(err) }));
+        bestEffort('worker.commit.haiku_lazy',
+          runHaikuLazy(haikuAi, storage, commit, tenant.id, depositAuthorLogin, firedTopicsThisCommit, nowIso),
+          { sha: commit.sha });
       }
 
       if (pipelineFindings.length === 0) {
@@ -647,8 +650,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           const capa1Topics = [...new Set(candidate.findings.map((f) => f.moduleId))];
           const capa1Gatillador: Gatillador = capa1Topics.length === 1 ? 'individual_mono' : 'individual_multi';
           const capa1Author = candidate.authorLogin ?? tenant.github_username;
-          consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo)
-            .catch((err) => logger.warn('worker.commit.capa1_consume.failed', { sha: candidate.commit.sha, error: String(err) }));
+          bestEffort('worker.commit.capa1_consume',
+            consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo),
+            { sha: candidate.commit.sha });
         }
 
         // Post directly to LinkedIn — prefer member credentials, fall back to tenant
@@ -890,8 +894,9 @@ async function runAccumulationCheck(
   appBaseUrl: string,
   nowIso: string,
 ): Promise<void> {
-  await storage.updateHalfLivesForAuthor(authorLogin, fullRepo)
-    .catch((err) => logger.warn('worker.accumulation.half_lives.failed', { authorLogin, repo: fullRepo, error: String(err) }));
+  bestEffort('worker.accumulation.half_lives',
+    storage.updateHalfLivesForAuthor(authorLogin, fullRepo),
+    { authorLogin, repo: fullRepo });
 
   const entries = await storage.getSignalBankEntries(authorLogin, fullRepo);
   if (entries.length === 0) return;
@@ -920,16 +925,17 @@ async function runAccumulationCheck(
   if (firedTopics.length >= 2) {
     const coherence = scoreCoherenceFromSignals(allSignals, medianIntervalDays);
     gatillador = coherence.decision === 'arco' ? 'arco' : 'focal_multiple';
-    await storage.recordRoutingDecision({
-      github_author_login: authorLogin,
-      voice_post_id: null,
-      commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
-      score_coherencia: coherence.total,
-      score_structural: coherence.structural,
-      score_temporal: coherence.temporal,
-      score_lexical: coherence.lexical,
-      decision: coherence.decision,
-    }).catch((err) => logger.warn('worker.accumulation.routing_record.failed', { error: String(err) }));
+    bestEffort('worker.accumulation.routing_record',
+      storage.recordRoutingDecision({
+        github_author_login: authorLogin,
+        voice_post_id: null,
+        commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
+        score_coherencia: coherence.total,
+        score_structural: coherence.structural,
+        score_temporal: coherence.temporal,
+        score_lexical: coherence.lexical,
+        decision: coherence.decision,
+      }));
   } else {
     gatillador = 'focal';
   }
