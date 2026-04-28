@@ -93,6 +93,7 @@ export class SecurityModule implements CodeAnalyzer {
 
     for (const diff of ctx.diffs) {
       if (!diff.patch || diff.status === 'removed') continue;
+      if (diff.language === 'Markdown') continue;
 
       const addedLines = diff.patch
         .split('\n')

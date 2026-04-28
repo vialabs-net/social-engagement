@@ -99,9 +99,9 @@ export class DesignPatternsModule implements CodeAnalyzer {
   private readonly AUXILIARY_PATH_RE = /\b(tools|scripts|migrations?|__tests__|\.github)\b/i;
 
   async analyze(ctx: AnalysisContext): Promise<ModuleResult> {
-    // Exclude auxiliary files from pattern detection; they are not product architecture.
+    // Exclude auxiliary and Markdown files from pattern detection.
     const productDiffs = ctx.diffs.filter(
-      (d) => !this.AUXILIARY_PATH_RE.test(d.filename),
+      (d) => !this.AUXILIARY_PATH_RE.test(d.filename) && d.language !== 'Markdown',
     );
 
     const addedText = productDiffs
