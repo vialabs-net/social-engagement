@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { bestEffort } from '../utils/best-effort.js';
 import { computeEditRatio } from '../voice/similarity.js';
 import type { BufferClient } from './client.js';
 import type { IVoiceStorage, Platform } from '../voice/storage.js';
@@ -114,12 +115,11 @@ export async function scanPlatform(
       });
       // Adapt signal_bank multiplier via edit_ratio formula: 0.5 + 2.0 × mean_last_10 (best-effort)
       if (bestDraft.top_module_id && bestDraft.author_login && bestDraft.repo) {
-        applyMultiplierFeedback(storage, bestDraft.author_login, bestDraft.repo, bestDraft.top_module_id)
-          .catch((err) => logger.warn('sent_scanner.multiplier_feedback.failed', {
-            draftId: bestDraft.id,
-            topic: bestDraft.top_module_id,
-            error: String(err),
-          }));
+        bestEffort(
+          'sent_scanner.multiplier_feedback',
+          applyMultiplierFeedback(storage, bestDraft.author_login, bestDraft.repo, bestDraft.top_module_id),
+          { draftId: bestDraft.id, topic: bestDraft.top_module_id },
+        );
       }
       // Remove matched draft so it can't be claimed by another sent post
       remaining.splice(bestIdx, 1);

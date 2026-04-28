@@ -6,6 +6,7 @@
 
 import { loadConfig } from './config/loader.js';
 import { logger } from './utils/logger.js';
+import { bestEffort } from './utils/best-effort.js';
 import { isInteresting } from './utils/commit-filter.js';
 import { GitHubClient } from './github/client.js';
 import { pollNewPushEvents } from './github/events-poller.js';
@@ -207,14 +208,16 @@ async function main(): Promise<void> {
       const depositNowIso = new Date().toISOString();
       const depositAuthorLogin = commit.authorLogin ?? config.author.github_username;
       const commitFiles = commit.diffs.map((d) => d.filename);
-      await depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso, commitFiles)
-        .catch((err) => logger.warn('poll.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
+      bestEffort('poll.deposit_signal',
+        depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso, commitFiles),
+        { sha: commit.sha });
 
       // Haiku lazy: semantically evaluate topics near threshold that scored 0 in regex pipeline (best-effort)
       {
         const firedTopicsThisCommit = [...new Set([...weakFindings.map((f) => f.moduleId), ...deltaHits.map((d) => d.topic)])];
-        runHaikuLazyPoll(haikuAi, storage, commit, tenantId, depositAuthorLogin, firedTopicsThisCommit, depositNowIso)
-          .catch((err) => logger.warn('poll.commit.haiku_lazy.failed', { sha: commit.sha, error: String(err) }));
+        bestEffort('poll.commit.haiku_lazy',
+          runHaikuLazyPoll(haikuAi, storage, commit, tenantId, depositAuthorLogin, firedTopicsThisCommit, depositNowIso),
+          { sha: commit.sha });
       }
 
       if (pipelineFindings.length === 0) {
@@ -329,8 +332,9 @@ async function main(): Promise<void> {
           const capa1Topics = [...new Set(candidate.findings.map((f) => f.moduleId))];
           const capa1Gatillador: Gatillador = capa1Topics.length === 1 ? 'individual_mono' : 'individual_multi';
           const capa1Author = candidate.authorLogin ?? config.author.github_username;
-          consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo)
-            .catch((err) => logger.warn('poll.commit.capa1_consume.failed', { sha: candidate.commit.sha, error: String(err) }));
+          bestEffort('poll.commit.capa1_consume',
+            consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo),
+            { sha: candidate.commit.sha });
         }
 
         const publishResult = await publishToBuffer(
@@ -523,8 +527,9 @@ async function runAccumulationCheckPoll(
   authorState: PollAuthorState,
   nowIso: string,
 ): Promise<void> {
-  await storage.updateHalfLivesForAuthor(authorLogin, repo)
-    .catch((err) => logger.warn('poll.accumulation.half_lives.failed', { authorLogin, repo, error: String(err) }));
+  bestEffort('poll.accumulation.half_lives',
+    storage.updateHalfLivesForAuthor(authorLogin, repo),
+    { authorLogin, repo });
 
   const entries = await storage.getSignalBankEntries(authorLogin, repo);
   if (entries.length === 0) return;
@@ -552,16 +557,17 @@ async function runAccumulationCheckPoll(
   if (firedTopics.length >= 2) {
     const coherence = scoreCoherenceFromSignals(allSignals, medianIntervalDays);
     gatillador = coherence.decision === 'arco' ? 'arco' : 'focal_multiple';
-    await storage.recordRoutingDecision({
-      github_author_login: authorLogin,
-      voice_post_id: null,
-      commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
-      score_coherencia: coherence.total,
-      score_structural: coherence.structural,
-      score_temporal: coherence.temporal,
-      score_lexical: coherence.lexical,
-      decision: coherence.decision,
-    }).catch((err) => logger.warn('poll.accumulation.routing_record.failed', { error: String(err) }));
+    bestEffort('poll.accumulation.routing_record',
+      storage.recordRoutingDecision({
+        github_author_login: authorLogin,
+        voice_post_id: null,
+        commit_shas: [...new Set(allSignals.map((s) => s.commit_sha))],
+        score_coherencia: coherence.total,
+        score_structural: coherence.structural,
+        score_temporal: coherence.temporal,
+        score_lexical: coherence.lexical,
+        decision: coherence.decision,
+      }));
   } else {
     gatillador = 'focal';
   }
