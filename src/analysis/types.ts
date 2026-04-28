@@ -31,6 +31,7 @@ export interface FileDiff {
   deletions: number;
   patch: string;           // raw unified diff, max 150 lines
   language?: string;
+  hunks?: Array<{ functionName?: string }>;
 }
 
 export interface AnalysisContext {

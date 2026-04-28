@@ -21,6 +21,7 @@ import type {
   RoutingDecisionInput,
 } from './storage.js';
 import type { WeakSignal } from '../analysis/types.js';
+import { computeHalfLives } from '../analysis/accumulation-engine.js';
 
 interface SqliteVoiceProfileRow {
   id: string;
@@ -292,6 +293,23 @@ export class SqliteStorage implements IVoiceStorage {
         decided_at           TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    // CEP columns for pending_batch — idempotent (try/catch per column)
+    const pendingBatchCols = [
+      `ALTER TABLE pending_batch ADD COLUMN signal_strength INTEGER DEFAULT 0`,
+      `ALTER TABLE pending_batch ADD COLUMN topic_categories TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE pending_batch ADD COLUMN proto_findings TEXT`,
+      `ALTER TABLE pending_batch ADD COLUMN expires_at TEXT`,
+      `ALTER TABLE pending_batch ADD COLUMN consumed INTEGER NOT NULL DEFAULT 0`,
+    ];
+    for (const stmt of pendingBatchCols) {
+      try { this.db.exec(stmt); } catch { /* column already exists */ }
+    }
+
+    // affected_files column on signal_events — idempotent
+    try {
+      this.db.exec(`ALTER TABLE signal_events ADD COLUMN affected_files TEXT NOT NULL DEFAULT '[]'`);
+    } catch { /* column already exists */ }
   }
 
   saveDraft(input: SaveDraftInput): Promise<string> {
@@ -860,6 +878,51 @@ export class SqliteStorage implements IVoiceStorage {
       UPDATE signal_bank SET multiplier = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(clamped, row.id);
+
+    return Promise.resolve();
+  }
+
+  setSignalBankMultiplier(authorLogin: string, repo: string, topic: string, value: number): Promise<void> {
+    const clamped = Math.min(3.0, Math.max(0.1, value));
+    this.db.prepare(`
+      UPDATE signal_bank SET multiplier = ?, updated_at = datetime('now')
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ? AND topic = ?
+    `).run(clamped, this.tenantId, authorLogin, repo, topic);
+    return Promise.resolve();
+  }
+
+  updateHalfLivesForAuthor(authorLogin: string, repo: string): Promise<void> {
+    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = this.db.prepare(`
+      SELECT commit_sha, MIN(accumulated_at) as ts
+      FROM signal_events
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+        AND accumulated_at > ?
+      GROUP BY commit_sha
+      ORDER BY ts ASC
+    `).all(this.tenantId, authorLogin, repo, since) as { commit_sha: string; ts: string }[];
+
+    const commitsCount = rows.length;
+    if (commitsCount < 2) return Promise.resolve();
+
+    const timestamps = rows.map((r) => new Date(r.ts).getTime());
+    const intervals: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push((timestamps[i]! - timestamps[i - 1]!) / (24 * 60 * 60 * 1000));
+    }
+    intervals.sort((a, b) => a - b);
+    const mid = Math.floor(intervals.length / 2);
+    const medianIntervalDays = intervals.length % 2 === 0
+      ? ((intervals[mid - 1]! + intervals[mid]!) / 2)
+      : intervals[mid]!;
+
+    const { halfLifeSignal, halfLifeRefractory } = computeHalfLives(commitsCount, medianIntervalDays);
+
+    this.db.prepare(`
+      UPDATE signal_bank
+      SET half_life_signal = ?, half_life_refractory = ?, commit_frequency = ?, updated_at = datetime('now')
+      WHERE tenant_id = ? AND github_author_login = ? AND repo = ?
+    `).run(halfLifeSignal, halfLifeRefractory, medianIntervalDays, this.tenantId, authorLogin, repo);
 
     return Promise.resolve();
   }

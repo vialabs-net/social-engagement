@@ -33,9 +33,10 @@ import {
   selectTopDailyCandidates,
   type RankedCommitCandidate,
 } from './worker/daily-post-selection.js';
-import { check, checkCrossVolume } from './analysis/accumulation-engine.js';
+import { check, checkCrossVolume, shouldRunHaikuLazy } from './analysis/accumulation-engine.js';
+import { extractSignalFromDiff } from './analysis/signal-extractor.js';
 import { scoreCoherenceFromSignals } from './analysis/coherence-router.js';
-import { consumeSignalsForPost } from './analysis/signal-consumer.js';
+import { consumeSignalsForPost, type Gatillador } from './analysis/signal-consumer.js';
 import { generateSynthesisPost } from './ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from './analysis/types.js';
 import type { SignalBankEntry, SignalEvent } from './voice/storage.js';
@@ -77,6 +78,7 @@ async function main(): Promise<void> {
 
   const github = new GitHubClient(process.env['GITHUB_TOKEN'] ?? '');
   const anthropic = createAIClient('anthropic', process.env['ANTHROPIC_API_KEY'] ?? '', config.ai.model, config.ai.max_tokens);
+  const haikuAi = createAIClient('anthropic', process.env['ANTHROPIC_API_KEY'] ?? '', 'claude-haiku-4-5-20251001', 600);
   const bufferClient = new BufferClient(process.env['BUFFER_ACCESS_TOKEN'] ?? '');
 
   // Load events state from storage (SQLite only — Supabase handled separately)
@@ -208,6 +210,13 @@ async function main(): Promise<void> {
       await depositWeakSignalsPoll(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenantId, depositAuthorLogin, depositNowIso, commitFiles)
         .catch((err) => logger.warn('poll.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
+      // Haiku lazy: semantically evaluate topics near threshold that scored 0 in regex pipeline (best-effort)
+      {
+        const firedTopicsThisCommit = [...new Set([...weakFindings.map((f) => f.moduleId), ...deltaHits.map((d) => d.topic)])];
+        runHaikuLazyPoll(haikuAi, storage, commit, tenantId, depositAuthorLogin, firedTopicsThisCommit, depositNowIso)
+          .catch((err) => logger.warn('poll.commit.haiku_lazy.failed', { sha: commit.sha, error: String(err) }));
+      }
+
       if (pipelineFindings.length === 0) {
         logger.info('poll.skip.no_findings', { sha: commit.sha });
         continue;
@@ -314,6 +323,15 @@ async function main(): Promise<void> {
           opening_move: openingMove,
           top_module_id: candidate.topModuleId ?? null,
         });
+
+        // Consume accumulated signals for the fired topics (§9 gatilladores 1 & 2, best-effort)
+        {
+          const capa1Topics = [...new Set(candidate.findings.map((f) => f.moduleId))];
+          const capa1Gatillador: Gatillador = capa1Topics.length === 1 ? 'individual_mono' : 'individual_multi';
+          const capa1Author = candidate.authorLogin ?? config.author.github_username;
+          consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo)
+            .catch((err) => logger.warn('poll.commit.capa1_consume.failed', { sha: candidate.commit.sha, error: String(err) }));
+        }
 
         const publishResult = await publishToBuffer(
           bufferClient,
@@ -457,6 +475,29 @@ async function depositWeakSignalsPoll(
   await Promise.all(deposits.map((s) => storage.depositSignal(s)));
 }
 
+async function runHaikuLazyPoll(
+  haiku: import('./ai/types.js').IAIClient,
+  storage: IVoiceStorage,
+  commit: EnrichedCommit,
+  tenantId: string,
+  authorLogin: string,
+  firedTopics: string[],
+  nowIso: string,
+): Promise<void> {
+  const entries = await storage.getSignalBankEntries(authorLogin, commit.repo);
+  const fired = new Set(firedTopics);
+  const candidates = entries.filter((e) => !fired.has(e.topic) && shouldRunHaikuLazy(e, nowIso));
+  if (candidates.length === 0) return;
+
+  for (const entry of candidates) {
+    const signal = await extractSignalFromDiff(haiku, commit, entry.topic, tenantId, authorLogin);
+    if (signal) {
+      await storage.depositSignal(signal);
+      logger.info('poll.commit.haiku_lazy.deposit', { sha: commit.sha, topic: entry.topic, strength: signal.strength });
+    }
+  }
+}
+
 function getAuthorRepos(
   candidatesByAuthor: Map<string, PollCommitCandidate[]>,
   authorState: PollAuthorState,
@@ -482,6 +523,9 @@ async function runAccumulationCheckPoll(
   authorState: PollAuthorState,
   nowIso: string,
 ): Promise<void> {
+  await storage.updateHalfLivesForAuthor(authorLogin, repo)
+    .catch((err) => logger.warn('poll.accumulation.half_lives.failed', { authorLogin, repo, error: String(err) }));
+
   const entries = await storage.getSignalBankEntries(authorLogin, repo);
   if (entries.length === 0) return;
 

@@ -29,9 +29,10 @@ import {
   selectTopDailyCandidates,
   type RankedCommitCandidate,
 } from './daily-post-selection.js';
-import { check, checkCrossVolume } from '../analysis/accumulation-engine.js';
+import { check, checkCrossVolume, shouldRunHaikuLazy } from '../analysis/accumulation-engine.js';
+import { extractSignalFromDiff } from '../analysis/signal-extractor.js';
 import { scoreCoherenceFromSignals } from '../analysis/coherence-router.js';
-import { consumeSignalsForPost } from '../analysis/signal-consumer.js';
+import { consumeSignalsForPost, type Gatillador } from '../analysis/signal-consumer.js';
 import { generateSynthesisPost } from '../ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from '../analysis/types.js';
 import type { SignalBankEntry, SignalEvent } from '../voice/storage.js';
@@ -68,6 +69,7 @@ export interface ProcessJobDeps {
 }
 
 const MATCHER_MAX_TOKENS = 400;
+const HAIKU_MAX_TOKENS = 600;
 
 type TodayDraftState = Pick<VoicePost, 'created_at' | 'opening_move' | 'top_module_id'>;
 
@@ -181,6 +183,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   const github = new GitHubClient(installationToken);
   const generationAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
   const matcherAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.classify_model, MATCHER_MAX_TOKENS);
+  const haikuAi = createAIClient('anthropic', deps.anthropicApiKey, 'claude-haiku-4-5-20251001', HAIKU_MAX_TOKENS);
   const storage = new SupabaseStorage(deps.supabaseUrl, deps.supabaseServiceKey, tenant.id);
   const embedder = deps.openaiApiKey
     ? createEmbedder(config.embeddings.provider, deps.openaiApiKey, config.embeddings.model)
@@ -411,6 +414,13 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       await depositWeakSignals(storage, weakFindings, deltaHits, commit.sha, commit.repo, tenant.id, depositAuthorLogin, nowIso, commitFiles)
         .catch((err) => logger.warn('worker.commit.deposit_signal.failed', { sha: commit.sha, error: String(err) }));
 
+      // Haiku lazy: semantically evaluate topics near threshold that scored 0 in regex pipeline (best-effort)
+      {
+        const firedTopicsThisCommit = [...new Set([...weakFindings.map((f) => f.moduleId), ...deltaHits.map((d) => d.topic)])];
+        runHaikuLazy(haikuAi, storage, commit, tenant.id, depositAuthorLogin, firedTopicsThisCommit, nowIso)
+          .catch((err) => logger.warn('worker.commit.haiku_lazy.failed', { sha: commit.sha, error: String(err) }));
+      }
+
       if (pipelineFindings.length === 0) {
         logger.info('worker.commit.skip.no_findings', { sha: commit.sha });
         continue;
@@ -632,6 +642,15 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           top_module_id: candidate.topModuleId ?? null,
         });
 
+        // Consume accumulated signals for the fired topics (§9 gatilladores 1 & 2, best-effort)
+        {
+          const capa1Topics = [...new Set(candidate.findings.map((f) => f.moduleId))];
+          const capa1Gatillador: Gatillador = capa1Topics.length === 1 ? 'individual_mono' : 'individual_multi';
+          const capa1Author = candidate.authorLogin ?? tenant.github_username;
+          consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo)
+            .catch((err) => logger.warn('worker.commit.capa1_consume.failed', { sha: candidate.commit.sha, error: String(err) }));
+        }
+
         // Post directly to LinkedIn — prefer member credentials, fall back to tenant
         const effectiveLinkedinToken = authorState.memberLinkedinToken ?? secrets.linkedinAccessToken;
         const effectiveLinkedinMemberId = authorState.memberLinkedinMemberId ?? tenant.linkedin_member_id;
@@ -835,6 +854,29 @@ async function depositWeakSignals(
   await Promise.all(deposits.map((s) => storage.depositSignal(s)));
 }
 
+async function runHaikuLazy(
+  haiku: import('../ai/types.js').IAIClient,
+  storage: IVoiceStorage,
+  commit: import('../github/commit-enricher.js').EnrichedCommit,
+  tenantId: string,
+  authorLogin: string,
+  firedTopics: string[],
+  nowIso: string,
+): Promise<void> {
+  const entries = await storage.getSignalBankEntries(authorLogin, commit.repo);
+  const fired = new Set(firedTopics);
+  const candidates = entries.filter((e) => !fired.has(e.topic) && shouldRunHaikuLazy(e, nowIso));
+  if (candidates.length === 0) return;
+
+  for (const entry of candidates) {
+    const signal = await extractSignalFromDiff(haiku, commit, entry.topic, tenantId, authorLogin);
+    if (signal) {
+      await storage.depositSignal(signal);
+      logger.info('worker.commit.haiku_lazy.deposit', { sha: commit.sha, topic: entry.topic, strength: signal.strength });
+    }
+  }
+}
+
 async function runAccumulationCheck(
   storage: IVoiceStorage,
   generationAi: import('../ai/types.js').IAIClient,
@@ -848,6 +890,9 @@ async function runAccumulationCheck(
   appBaseUrl: string,
   nowIso: string,
 ): Promise<void> {
+  await storage.updateHalfLivesForAuthor(authorLogin, fullRepo)
+    .catch((err) => logger.warn('worker.accumulation.half_lives.failed', { authorLogin, repo: fullRepo, error: String(err) }));
+
   const entries = await storage.getSignalBankEntries(authorLogin, fullRepo);
   if (entries.length === 0) return;
 
