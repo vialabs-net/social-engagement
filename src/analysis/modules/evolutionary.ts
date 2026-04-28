@@ -41,8 +41,7 @@ function detectModuleExtraction(ctx: AnalysisContext): Finding | null {
   for (const added of addedFiles) {
     for (const modified of modifiedWithDeletions) {
       const sameDir = getDirectory(added.filename) === getDirectory(modified.filename);
-      const sameExt = getExtension(added.filename) === getExtension(modified.filename);
-      if (sameDir || sameExt) {
+      if (sameDir) {
         return {
           moduleId: 'evolutionary',
           aspect: 'module extraction',
