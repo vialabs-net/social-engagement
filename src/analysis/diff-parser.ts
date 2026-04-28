@@ -21,6 +21,7 @@ export function parseCommitFiles(rawFiles: RawFile[]): FileDiff[] {
     .map(f => {
       const patch = f.patch ? truncatePatch(f.patch, MAX_PATCH_LINES) : '';
       const status = normalizeStatus(f.status ?? 'modified');
+      const hunks = parseHunks(patch);
       return {
         filename: f.filename,
         status,
@@ -28,6 +29,7 @@ export function parseCommitFiles(rawFiles: RawFile[]): FileDiff[] {
         deletions: f.deletions ?? 0,
         patch,
         language: detectLanguage(f.filename),
+        hunks: hunks.length > 0 ? hunks : undefined,
       } satisfies FileDiff;
     });
 }
@@ -156,6 +158,18 @@ export function extractFirstHunkSnippet(patch: string, maxLines = 6): string {
   }
 
   return result.join('\n');
+}
+
+function parseHunks(patch: string): Array<{ functionName?: string }> {
+  const hunks: Array<{ functionName?: string }> = [];
+  for (const line of patch.split('\n')) {
+    if (!line.startsWith('@@')) continue;
+    // Format: @@ -OLD_START,OLD_LINES +NEW_START,NEW_LINES @@ functionName
+    const match = line.match(/^@@ [^@]+ @@ (.+)$/);
+    const functionName = match?.[1]?.trim() || undefined;
+    hunks.push({ functionName });
+  }
+  return hunks;
 }
 
 function normalizeStatus(raw: string): FileDiff['status'] {
