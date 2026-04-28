@@ -293,6 +293,23 @@ export class SqliteStorage implements IVoiceStorage {
         decided_at           TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    // CEP columns for pending_batch — idempotent (try/catch per column)
+    const pendingBatchCols = [
+      `ALTER TABLE pending_batch ADD COLUMN signal_strength INTEGER DEFAULT 0`,
+      `ALTER TABLE pending_batch ADD COLUMN topic_categories TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE pending_batch ADD COLUMN proto_findings TEXT`,
+      `ALTER TABLE pending_batch ADD COLUMN expires_at TEXT`,
+      `ALTER TABLE pending_batch ADD COLUMN consumed INTEGER NOT NULL DEFAULT 0`,
+    ];
+    for (const stmt of pendingBatchCols) {
+      try { this.db.exec(stmt); } catch { /* column already exists */ }
+    }
+
+    // affected_files column on signal_events — idempotent
+    try {
+      this.db.exec(`ALTER TABLE signal_events ADD COLUMN affected_files TEXT NOT NULL DEFAULT '[]'`);
+    } catch { /* column already exists */ }
   }
 
   saveDraft(input: SaveDraftInput): Promise<string> {
