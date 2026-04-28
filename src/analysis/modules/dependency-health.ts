@@ -110,12 +110,38 @@ export class DependencyHealthModule implements CodeAnalyzer {
 
       for (const pattern of PATTERNS) {
         if (pattern.detect(addedLines, removedLines)) {
+          const depFacts: string[] = [`${pattern.name} in ${diff.filename}.`];
+
+          if (pattern.name === 'security-sensitive dependency') {
+            const dep = addedLines.find((l) => {
+              const m = l.match(/"([^"]+)":\s*"/);
+              return m !== null && SECURITY_DEPS.has(m[1]!);
+            })?.match(/"([^"]+)":\s*"/)?.[1];
+            if (dep) depFacts.push(`Package added: "${dep}".`);
+          } else if (pattern.name === 'major version bump') {
+            const bumped = addedLines.find((l) => l.match(/"([^"]+)":\s*"[\^~]?(\d+)\./));
+            if (bumped) depFacts.push(`Package bumped: "${bumped.trim().slice(0, 80)}".`);
+          } else if (pattern.name === 'new dependency added') {
+            const newDep = addedLines.find((l) => {
+              const m = l.match(/"([^"]+)":\s*"/);
+              return m !== null && SEMVER_REGEX.test(l);
+            })?.match(/"([^"]+)":\s*"/)?.[1];
+            if (newDep) depFacts.push(`New package: "${newDep}".`);
+          } else if (pattern.name === 'dependency removed') {
+            const removed = removedLines.find((l) => {
+              const m = l.match(/"([^"]+)":\s*"/);
+              return m !== null && SEMVER_REGEX.test(l);
+            })?.match(/"([^"]+)":\s*"/)?.[1];
+            if (removed) depFacts.push(`Package removed: "${removed}".`);
+          }
+
           return {
             moduleId: this.id,
             aspect: pattern.name,
             finding: `${pattern.name} in ${diff.filename}`,
             technicalDetail: pattern.technicalDetail,
             plainLanguage: pattern.explanation,
+            verifiableFacts: depFacts,
             interestScore: pattern.score,
             contextHint: `${diff.filename} in ${ctx.repo}`,
           };
