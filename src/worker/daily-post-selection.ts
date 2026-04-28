@@ -103,7 +103,8 @@ function adjustFindingScore(
   recentModuleFireCounts: ReadonlyMap<string, number>,
 ): number {
   const fireCount = recentModuleFireCounts.get(finding.moduleId) ?? 0;
-  return finding.interestScore / (fireCount + 1);
+  const floor = finding.interestScore * 0.4;
+  return Math.max(finding.interestScore / Math.log2(fireCount + 2), floor);
 }
 
 function computeSelectionScore<T extends RankedCommitCandidate>(
