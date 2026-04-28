@@ -74,7 +74,22 @@ export async function generateSynthesisPost(
   if (!bufferTextMatch) {
     throw new Error(`synthesis-generator: missing <buffer_text> in response for ${input.gatillador}/${input.topics.join(',')}`);
   }
-  const bufferText = bufferTextMatch[1]?.trim() ?? '';
+
+  const maxChars = input.voiceProfile.post_length.max;
+  let bufferText = bufferTextMatch[1]?.trim() ?? '';
+
+  if (bufferText.length > maxChars * 1.05) {
+    logger.warn('synthesis-generator.length_exceeded_retry', {
+      length: bufferText.length,
+      maxChars,
+      gatillador: input.gatillador,
+    });
+    const reinforced = `${userPrompt}\n\nREINFORCED: hard cap is ${maxChars} characters. Do not exceed it.`;
+    const retryRaw = await client.complete(systemPrompt, reinforced);
+    const retryMatch = XML_BUFFER_TEXT_RE.exec(retryRaw);
+    if (retryMatch) bufferText = retryMatch[1]?.trim() ?? bufferText;
+  }
+
   if (bufferText.length < input.voiceProfile.post_length.min) {
     throw new Error(
       `synthesis-generator: <buffer_text> too short (${bufferText.length} < ${input.voiceProfile.post_length.min}) for ${input.gatillador}/${input.topics.join(',')}`,

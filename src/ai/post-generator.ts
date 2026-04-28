@@ -73,8 +73,21 @@ export async function generatePosts(
 
   const rawResponse = await client.complete(systemPrompt, userPrompt);
 
-  const parsed = parseResponse(rawResponse);
-  const post = enforceMainPostLength(parsed.post, options.voiceProfile.post_length.max);
+  const maxChars = options.voiceProfile.post_length.max;
+  let parsed = parseResponse(rawResponse);
+
+  if (parsed.post.length > maxChars * 1.05) {
+    logger.warn('ai.generate.length_exceeded_retry', {
+      sha: commit.sha,
+      length: parsed.post.length,
+      maxChars,
+    });
+    const reinforced = `${userPrompt}\n\nREINFORCED: hard cap is ${maxChars} characters. Do not exceed it.`;
+    const retryResponse = await client.complete(systemPrompt, reinforced);
+    parsed = parseResponse(retryResponse);
+  }
+
+  const post = enforceMainPostLength(parsed.post, maxChars);
   const shortPost = parsed.shortPost;
 
   const topFinding = findings[0]?.finding;
