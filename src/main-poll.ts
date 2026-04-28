@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       }
 
       // Enrich commit
-      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, pushCommit.authorLogin);
+      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, pushCommit.authorLogin, pushEvent.ref);
 
       // Rule-based filter — zero API cost
       const filterResult = isInteresting(
