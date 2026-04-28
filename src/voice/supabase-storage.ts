@@ -709,6 +709,18 @@ export class SupabaseStorage implements IVoiceStorage {
     if (error) throw new Error(`adjustSignalBankMultiplier failed: ${error.message}`);
   }
 
+  async setSignalBankMultiplier(authorLogin: string, repo: string, topic: string, value: number): Promise<void> {
+    const clamped = Math.min(3.0, Math.max(0.1, value));
+    const { error } = await this.db
+      .from('signal_bank')
+      .update({ multiplier: clamped, updated_at: new Date().toISOString() })
+      .eq('tenant_id', this.tenantId)
+      .eq('github_author_login', authorLogin)
+      .eq('repo', repo)
+      .eq('topic', topic);
+    if (error) throw new Error(`setSignalBankMultiplier failed: ${error.message}`);
+  }
+
   async updateHalfLivesForAuthor(authorLogin: string, repo: string): Promise<void> {
     const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await this.db

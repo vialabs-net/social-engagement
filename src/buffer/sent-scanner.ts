@@ -9,8 +9,6 @@ import { mergeVoiceProfile } from '../voice/profile-utils.js';
 
 const MATCH_THRESHOLD = 0.4;  // min similarity to count as a match
 const EXPIRED_DAYS = 7;
-const MULTIPLIER_FACTOR_HIGH = 0.85; // edit_ratio >= 0.7: AI nailed it, lower threshold
-const MULTIPLIER_FACTOR_LOW = 1.15;  // edit_ratio <= 0.3: heavy rewrite, raise threshold
 
 function extractLinkedInUrn(externalLink: string | null): string | undefined {
   if (!externalLink) return undefined;
@@ -114,21 +112,14 @@ export async function scanPlatform(
         platform,
         linkedinUrn: linkedinUrn ?? null,
       });
-      // Adapt signal_bank multiplier based on edit_ratio feedback (best-effort)
+      // Adapt signal_bank multiplier via edit_ratio formula: 0.5 + 2.0 × mean_last_10 (best-effort)
       if (bestDraft.top_module_id && bestDraft.author_login && bestDraft.repo) {
-        const factor = bestScore >= 0.7
-          ? MULTIPLIER_FACTOR_HIGH
-          : bestScore <= 0.3
-            ? MULTIPLIER_FACTOR_LOW
-            : null;
-        if (factor !== null) {
-          storage.adjustSignalBankMultiplier(bestDraft.author_login, bestDraft.repo, bestDraft.top_module_id, factor)
-            .catch((err) => logger.warn('sent_scanner.multiplier_adjust.failed', {
-              draftId: bestDraft.id,
-              topic: bestDraft.top_module_id,
-              error: String(err),
-            }));
-        }
+        applyMultiplierFeedback(storage, bestDraft.author_login, bestDraft.repo, bestDraft.top_module_id)
+          .catch((err) => logger.warn('sent_scanner.multiplier_feedback.failed', {
+            draftId: bestDraft.id,
+            topic: bestDraft.top_module_id,
+            error: String(err),
+          }));
       }
       // Remove matched draft so it can't be claimed by another sent post
       remaining.splice(bestIdx, 1);
@@ -147,6 +138,23 @@ export async function scanPlatform(
   }
 
   logger.info('sent_scanner.done', { platform, scanned: sentPosts.length, matched });
+}
+
+async function applyMultiplierFeedback(
+  storage: IVoiceStorage,
+  authorLogin: string,
+  repo: string,
+  topic: string,
+): Promise<void> {
+  const outcomes = await storage.getRecentOutcomes(authorLogin, 50);
+  const topicRatios = outcomes
+    .filter((p) => p.top_module_id === topic && p.edit_ratio !== null)
+    .slice(0, 10)
+    .map((p) => p.edit_ratio as number);
+  if (topicRatios.length === 0) return;
+  const mean = topicRatios.reduce((sum, r) => sum + r, 0) / topicRatios.length;
+  const newMultiplier = Math.max(0.1, Math.min(3.0, 0.5 + 2.0 * mean));
+  await storage.setSignalBankMultiplier(authorLogin, repo, topic, newMultiplier);
 }
 
 async function refreshContentPreferences(storage: IVoiceStorage, authorLogin: string): Promise<void> {

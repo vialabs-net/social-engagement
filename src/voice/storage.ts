@@ -310,6 +310,13 @@ export interface IVoiceStorage {
    * No-op if no bank row exists yet for this bucket.
    */
   adjustSignalBankMultiplier(authorLogin: string, repo: string, topic: string, factor: number): Promise<void>;
+
+  /**
+   * Set signal_bank.multiplier to an absolute value for a specific (author, repo, topic) bucket.
+   * Used by the edit_ratio feedback loop: multiplier = 0.5 + 2.0 × mean_edit_ratio_last_10.
+   * Value is clamped to [0.1, 3.0]. No-op if no bank row exists yet for this bucket.
+   */
+  setSignalBankMultiplier(authorLogin: string, repo: string, topic: string, value: number): Promise<void>;
 }
 
 export type {
