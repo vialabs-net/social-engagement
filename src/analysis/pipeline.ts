@@ -35,7 +35,7 @@ export async function runPipeline(
   recentModuleIds: string[] = [],
 ): Promise<PipelineResult> {
   const filteredDiffs = ctx.diffs.filter(
-    (d) => !LOCKFILE_PATH_RE.test(d.filename) && !GENERATED_PATH_RE.test(d.filename),
+    (d) => !LOCKFILE_PATH_RE.test(d.filename) && !GENERATED_PATH_RE.test(d.filename) && d.language !== 'Markdown',
   );
   const effectiveCtx: AnalysisContext = filteredDiffs.length < ctx.diffs.length
     ? { ...ctx, diffs: filteredDiffs }
