@@ -15,15 +15,16 @@ const PATTERNS: readonly ArchPattern[] = [
     score: 9,
     technicalDetail: 'Hexagonal architecture — the domain defines Port interfaces; Adapters implement them. Business logic has zero dependencies on frameworks, databases, or transport.',
     explanation: 'Hexagonal architecture puts the domain at the center. Ports are interfaces the domain defines; adapters implement them. Swap a database adapter without touching a single line of business logic.',
-    detect: (_, filename, allFilenames) => {
-      const dirs = allFilenames.join(' ').toLowerCase();
-      const hasHexagonal =
-        /\b(ports?|adapters?|infrastructure|application|domain)\b/.test(dirs);
-      const isPortOrAdapter =
-        /(?:port|adapter|repository|gateway|handler)\.(ts|js|py|go|java|kt|ex|exs)$/i.test(
-          filename,
-        );
-      return hasHexagonal || isPortOrAdapter;
+    detect: (lines, filename) => {
+      const isHexagonalFile =
+        /(?:port|adapter|gateway)\.(ts|js|py|go|java|kt|ex|exs)$/i.test(filename);
+      const hasStructuralEvidence = lines.some(
+        (l) =>
+          /\binterface\s+\w*(Port|Adapter|Gateway)\b/.test(l) ||
+          /\bclass\s+\w*(Adapter|Gateway)\b/.test(l) ||
+          /\bimplements\s+\w*(Port|Adapter)\b/.test(l),
+      );
+      return isHexagonalFile || hasStructuralEvidence;
     },
   },
   {
@@ -76,7 +77,7 @@ const PATTERNS: readonly ArchPattern[] = [
     detect: (lines) =>
       lines.some(
         (l) =>
-          /\b(EventBus|MessageBus|DomainEventPublisher|EventEmitter)\b/.test(l) ||
+          /\b(EventBus|MessageBus|DomainEventPublisher)\b/.test(l) ||
           /\b(KafkaProducer|KafkaConsumer|RabbitMQ|nats\.connect)\b/.test(l) ||
           /\b(publish|subscribe|emit|dispatch)\s*\([^)]*[Ee]vent/.test(l),
       ),

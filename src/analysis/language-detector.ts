@@ -38,12 +38,17 @@ export function detectLanguage(filename: string): string | undefined {
   return EXT_TO_LANGUAGE[ext];
 }
 
+const LOCKFILE_RE = /^(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|npm-shrinkwrap\.json|tsconfig[^/]*\.json)$/i;
+
 /**
- * Returns the unique set of languages detected in the given diffs.
+ * Returns the unique set of languages detected in the given diffs,
+ * excluding lockfiles and config-only files that pollute language signals.
  */
 export function detectLanguages(diffs: FileDiff[]): string[] {
   const langs = new Set<string>();
   for (const diff of diffs) {
+    const basename = diff.filename.split('/').pop() ?? diff.filename;
+    if (LOCKFILE_RE.test(basename)) continue;
     if (diff.language) langs.add(diff.language);
   }
   return Array.from(langs);

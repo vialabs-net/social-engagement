@@ -16,7 +16,7 @@ export class ComplexityModule implements CodeAnalyzer {
     let affectedFiles: string[] = [];
 
     for (const diff of ctx.diffs) {
-      if (!diff.patch) continue;
+      if (!diff.patch || diff.language === 'Markdown') continue;
 
       const lines = diff.patch.split('\n');
       let fileAdded = 0;
