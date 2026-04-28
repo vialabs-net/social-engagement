@@ -34,6 +34,7 @@ const BOT_PATTERNS = [
 const MERGE_PATTERNS = [
   /^merge (pull request|branch|remote)/i,
   /^merged? /i,
+  /^chore(\([^)]+\))?\s*:\s*(auto.?merge|sync)\b/i,
 ];
 
 const RELEASE_PATTERNS = [
