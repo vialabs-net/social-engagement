@@ -3,6 +3,9 @@ import { MODULE_REGISTRY } from './modules/index.js';
 import type { AnalysisContext, Finding, DeltaHit, CodeAnalyzer } from './types.js';
 import { enrichFindingsForRetrieval } from './retrieval-enrichment.js';
 
+const LOCKFILE_PATH_RE = /(?:^|\/)(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|Cargo\.lock|poetry\.lock|go\.sum|composer\.lock)$/;
+const GENERATED_PATH_RE = /\/tests\/baselines\/|\/(?:__snapshots__)\/|\.snap$|\/dist\/|\/build\/|\/generated\//i;
+
 export interface PipelineResult {
   /** Findings with score ≥ 5 — eligible for immediate post (gatilladores 1 & 2) */
   readonly findings: Finding[];
@@ -31,9 +34,16 @@ export async function runPipeline(
   modules: CodeAnalyzer[] = MODULE_REGISTRY,
   recentModuleIds: string[] = [],
 ): Promise<PipelineResult> {
+  const filteredDiffs = ctx.diffs.filter(
+    (d) => !LOCKFILE_PATH_RE.test(d.filename) && !GENERATED_PATH_RE.test(d.filename),
+  );
+  const effectiveCtx: AnalysisContext = filteredDiffs.length < ctx.diffs.length
+    ? { ...ctx, diffs: filteredDiffs }
+    : ctx;
+
   const applicableModules = modules.filter(mod => {
     if (!mod.applicableLanguages) return true;
-    return mod.applicableLanguages.some(lang => ctx.languages.includes(lang));
+    return mod.applicableLanguages.some(lang => effectiveCtx.languages.includes(lang));
   });
 
   logger.info('analysis.pipeline.start', {
@@ -44,7 +54,7 @@ export async function runPipeline(
   });
 
   const results = await Promise.allSettled(
-    applicableModules.map(mod => mod.analyze(ctx))
+    applicableModules.map(mod => mod.analyze(effectiveCtx))
   );
 
   const allFindings: Finding[] = [];
