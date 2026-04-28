@@ -47,6 +47,11 @@ const DOCS_PATTERNS = [
   /^documentation\b/i,
 ];
 
+const REVERT_PATTERNS = [
+  /^revert(\([^)]+\))?\s*:/i,
+  /^revert\s+/i,
+];
+
 export function isInteresting(
   commit: CommitSummary,
   config: FilterConfig,
@@ -75,6 +80,11 @@ export function isInteresting(
   // Skip documentation-only commits
   if (DOCS_PATTERNS.some(p => p.test(commit.message))) {
     return { interesting: false, reason: 'docs commit' };
+  }
+
+  // Skip revert commits
+  if (REVERT_PATTERNS.some(p => p.test(commit.message))) {
+    return { interesting: false, reason: 'revert commit' };
   }
 
   // Skip commits matching user-configured exclude patterns
