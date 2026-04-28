@@ -75,6 +75,11 @@ export async function generateSynthesisPost(
     throw new Error(`synthesis-generator: missing <buffer_text> in response for ${input.gatillador}/${input.topics.join(',')}`);
   }
   const bufferText = bufferTextMatch[1]?.trim() ?? '';
+  if (bufferText.length < input.voiceProfile.post_length.min) {
+    throw new Error(
+      `synthesis-generator: <buffer_text> too short (${bufferText.length} < ${input.voiceProfile.post_length.min}) for ${input.gatillador}/${input.topics.join(',')}`,
+    );
+  }
 
   const openingMoveMatch = XML_OPENING_MOVE_RE.exec(raw);
   const openingMove = openingMoveMatch?.[1]?.trim() ?? 'unknown';
