@@ -48,7 +48,7 @@ function detectModuleExtraction(ctx: AnalysisContext): Finding | null {
           finding: `module extraction: responsibilities moved from ${modified.filename} into ${added.filename}`,
           technicalDetail: `Module extraction — splitting responsibilities from ${modified.filename} into ${added.filename} to create a smaller, more focused boundary.`,
           plainLanguage: 'Extracting code into its own module is a sign of a codebase maturing. A file that does too much gets split into focused pieces so each one is easier to test, reason about, and evolve independently.',
-          interestScore: 9,
+          interestScore: 7,
           contextHint: `${added.filename} in ${ctx.repo}`,
           retrievalTerms: getRetrievalTerms('module extraction', modified.filename, added.filename, ctx.commitMessage),
         };
