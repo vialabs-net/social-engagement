@@ -78,7 +78,7 @@ export class TestingModule implements CodeAnalyzer {
         finding: `Added ~${testCount} new test case(s) across ${testDiffs.length} file(s)${hasMocks ? ' with mock isolation' : ''}`,
         technicalDetail: `Unit testing${hasMocks ? ', mock/stub isolation' : ''}. ${testCount} test cases, ${testDiffs.reduce((s, d) => s + d.additions, 0)} lines added.`,
         plainLanguage: `The commit expanded the test suite with ${testCount} new cases${hasMocks ? ', using mocks to isolate the unit under test from its dependencies' : ''}. More tests mean faster feedback when something breaks.`,
-        interestScore: 6,
+        interestScore: 4,
         contextHint: `${testDiffs[0]?.filename ?? 'unknown'} in ${ctx.repo}`,
         evidence: {
           before: removedText.slice(0, 300) || undefined,
