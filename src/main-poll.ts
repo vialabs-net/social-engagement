@@ -35,7 +35,7 @@ import {
 } from './worker/daily-post-selection.js';
 import { check, checkCrossVolume } from './analysis/accumulation-engine.js';
 import { scoreCoherenceFromSignals } from './analysis/coherence-router.js';
-import { consumeSignalsForPost } from './analysis/signal-consumer.js';
+import { consumeSignalsForPost, type Gatillador } from './analysis/signal-consumer.js';
 import { generateSynthesisPost } from './ai/synthesis-generator.js';
 import type { WeakSignal, DeltaHit } from './analysis/types.js';
 import type { SignalBankEntry, SignalEvent } from './voice/storage.js';
@@ -314,6 +314,15 @@ async function main(): Promise<void> {
           opening_move: openingMove,
           top_module_id: candidate.topModuleId ?? null,
         });
+
+        // Consume accumulated signals for the fired topics (§9 gatilladores 1 & 2, best-effort)
+        {
+          const capa1Topics = [...new Set(candidate.findings.map((f) => f.moduleId))];
+          const capa1Gatillador: Gatillador = capa1Topics.length === 1 ? 'individual_mono' : 'individual_multi';
+          const capa1Author = candidate.authorLogin ?? config.author.github_username;
+          consumeSignalsForPost(storage, draftId, capa1Gatillador, capa1Topics, capa1Author, candidate.commit.repo)
+            .catch((err) => logger.warn('poll.commit.capa1_consume.failed', { sha: candidate.commit.sha, error: String(err) }));
+        }
 
         const publishResult = await publishToBuffer(
           bufferClient,
