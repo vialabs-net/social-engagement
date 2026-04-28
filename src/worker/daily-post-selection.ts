@@ -3,7 +3,6 @@ import type { EnrichedCommit } from '../github/commit-enricher.js';
 import type { VoicePost } from '../voice/storage.js';
 
 const FINDING_WEIGHTS = [1, 0.45, 0.2] as const;
-const MAX_SIZE_BONUS = 0.35;
 const MULTI_FINDING_BONUS = 0.2;
 const SAME_DAY_MODULE_PENALTY = 0.72;
 const SATURATED_MODULE_PENALTY = 0.9;
@@ -39,10 +38,8 @@ export function computeCandidateRankingScore(
     }, 0);
 
   const breadthBonus = Math.max(0, findings.length - 1) * MULTI_FINDING_BONUS;
-  const changedLines = commit.totalAdditions + commit.totalDeletions;
-  const sizeBonus = Math.min(changedLines, 400) / 400 * MAX_SIZE_BONUS;
 
-  return Number((weightedFindings + breadthBonus + sizeBonus).toFixed(4));
+  return Number((weightedFindings + breadthBonus).toFixed(4));
 }
 
 export function selectTopDailyCandidates<T extends RankedCommitCandidate>(
