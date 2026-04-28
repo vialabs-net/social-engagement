@@ -36,6 +36,17 @@ const MERGE_PATTERNS = [
   /^merged? /i,
 ];
 
+const RELEASE_PATTERNS = [
+  /^chore(\([^)]+\))?\s*:\s*(release|bump|version)/i,
+  /^release\s+v?\d+/i,
+  /^bump\s+(version|v?\d+)/i,
+];
+
+const DOCS_PATTERNS = [
+  /^docs(\([^)]+\))?\s*:/i,
+  /^documentation\b/i,
+];
+
 export function isInteresting(
   commit: CommitSummary,
   config: FilterConfig,
@@ -54,6 +65,16 @@ export function isInteresting(
   // Skip merge commits
   if (MERGE_PATTERNS.some(p => p.test(commit.message))) {
     return { interesting: false, reason: 'merge commit' };
+  }
+
+  // Skip release/version-bump commits
+  if (RELEASE_PATTERNS.some(p => p.test(commit.message))) {
+    return { interesting: false, reason: 'release commit' };
+  }
+
+  // Skip documentation-only commits
+  if (DOCS_PATTERNS.some(p => p.test(commit.message))) {
+    return { interesting: false, reason: 'docs commit' };
   }
 
   // Skip commits matching user-configured exclude patterns
