@@ -13,6 +13,7 @@ interface SecurityPattern {
 
 const SECRET_REGEX = /(?:api[_-]?key|secret|token|password|credentials)\s*[:=]\s*['"][A-Za-z0-9+/=_-]{16,}['"]/i;
 const SQL_CONCAT_REGEX = /(?:`SELECT|`INSERT|`UPDATE|`DELETE|`DROP).*\$\{|['"]SELECT.*['"]\s*\+|['"]INSERT.*['"]\s*\+/i;
+const SQL_PARAMETERIZED_REGEX = /\.query\s*\(\s*\w+\s*,\s*\[|\.execute\s*\(\s*\w+\s*,\s*\[|\$\d+\b/;
 const KMS_ENCRYPTION_REGEX = /@google-cloud\/kms|KeyManagementServiceClient|encrypted_dek|envelope encryption|createCipheriv|createDecipheriv|aes-256-gcm|getAuthTag|setAuthTag|kmsKeyName|resolveTenantSecrets|wrap(ped)? key|unwrap/i;
 const TEST_FILE_REGEX = /\.(test|spec)\.(ts|tsx|js|jsx)$|__tests__\//;
 
@@ -126,6 +127,27 @@ export class SecurityModule implements CodeAnalyzer {
         if (pattern.detect(addedLines, diff.filename) && pattern.detect(removedLines, diff.filename)) {
           hasBilateral = true;
         }
+      }
+
+      // Detect SQL injection fix: removed lines had string interpolation, added lines use parameterized queries
+      if (
+        !TEST_FILE_REGEX.test(diff.filename) &&
+        removedLines.some((l) => SQL_CONCAT_REGEX.test(l)) &&
+        addedLines.some((l) => SQL_PARAMETERIZED_REGEX.test(l))
+      ) {
+        return {
+          moduleId: this.id,
+          aspect: 'SQL injection fix',
+          finding: `Fixed SQL injection: replaced string interpolation with parameterized queries in ${diff.filename}`,
+          technicalDetail: 'SQL injection remediation — string-interpolated query replaced with parameterized form, separating data from SQL code.',
+          plainLanguage: 'The developer replaced raw string interpolation in SQL with parameterized queries. This eliminates the injection surface entirely — user input can no longer alter the query structure.',
+          interestScore: 10,
+          contextHint: `${diff.filename} in ${ctx.repo}`,
+          evidence: {
+            before: removedText.slice(0, 300) || undefined,
+            after: extractFirstHunkSnippet(diff.patch) || undefined,
+          },
+        };
       }
     }
 
