@@ -602,7 +602,10 @@ function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
 }
 
 function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean): string {
-  const { outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence, prDescription } = prContext;
+  const {
+    outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence,
+    prDescription, closingIssues, reviewSummaries, changesRequestedCount,
+  } = prContext;
 
   // Gate: medium confidence is not strong enough to assert incorporation in the post.
   const effectiveOutcome =
@@ -629,13 +632,37 @@ function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean
     : '';
 
   const privateNote = isPrivateRepo && prDescription
-    ? 'The PR description comes from a private repository. Apply the same abstraction rules as for the rest of the code: do not surface internal service names, business identifiers, or customer-specific terminology in the post.\n'
+    ? 'This PR description comes from a private repository. Describe the engineering challenge and solution at the level of an engineering blog post (Uber Engineering, Slack Engineering). Safe to include: the technical pattern, the problem class, the design decision, the operational consequence. Do not include: internal service names, endpoint paths, customer-specific terminology, proprietary business logic, or specific numbers that reveal competitive position.\n'
     : '';
+
+  const issueBlock = (() => {
+    if (!closingIssues || closingIssues.length === 0) return '';
+    const lines = closingIssues.map((issue) => {
+      const statsStr = `${issue.totalReactions} reactions, ${issue.totalComments} comments`;
+      const titleLine = `Closes #${issue.number} — "${issue.title}" (${statsStr})`;
+      const bodyLine = issue.bodySnippet ? `Problem description: ${issue.bodySnippet}` : '';
+      return bodyLine ? `${titleLine}\n${bodyLine}` : titleLine;
+    });
+    const privacyNote = isPrivateRepo
+      ? '\nDescribe the engineering challenge and solution at the engineering blog level. Omit internal service names, endpoint paths, customer-specific details, and proprietary business logic. Focus on the pattern: what was the problem class, what was the decision, what was the consequence.'
+      : '';
+    return `Issue context (what this commit resolves):\n${lines.join('\n\n')}\n\nUse this as the tension source for the narrative. Do not invent additional problems beyond what is described here.${privacyNote}\n`;
+  })();
+
+  const reviewBlock = (() => {
+    if (!reviewSummaries || reviewSummaries.length === 0) return '';
+    const count = changesRequestedCount ?? 0;
+    const header = count > 0
+      ? `Review context (${count} change request${count !== 1 ? 's' : ''} before merge):`
+      : 'Review context:';
+    const lines = reviewSummaries.map((r) => `- ${r.state}: "${r.body}"`);
+    return `${header}\n${lines.join('\n')}\n\nThe iteration process is part of the story — the author refined the design under reviewer feedback.\n`;
+  })();
 
   return `<contributor_voice>
 This commit is from a fork. PR context: ${outcomeText}.
 PR title: "${prTitle}".
-${descriptionBlock}${privateNote}${maintainerLine}
+${descriptionBlock}${privateNote}${issueBlock}${reviewBlock}${maintainerLine}
 Rules:
 - Cite the project as ${upstreamOwner}/${upstreamRepo} (the upstream), not the fork.
 - If outcome is open: describe the work as submitted and under review, not as accepted. Do not predict reviewer reactions. Acceptable: "I proposed X to ${upstreamOwner}/${upstreamRepo}." Not acceptable: "I added X to ${upstreamOwner}/${upstreamRepo}."
