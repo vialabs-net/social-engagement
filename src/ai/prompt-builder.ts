@@ -658,10 +658,14 @@ function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean
       const bodyLine = issue.bodySnippet ? `Problem description: ${issue.bodySnippet}` : '';
       return bodyLine ? `${titleLine}\n${bodyLine}` : titleLine;
     });
+    const hasOpenIssue = closingIssues.some((i) => i.state === 'OPEN');
+    const openNote = hasOpenIssue
+      ? '\nNote: this issue is still open — the commit partially addresses it. Do not present it as fully resolved tension.'
+      : '';
     const privacyNote = isPrivateRepo
       ? '\nDescribe the engineering challenge and solution at the engineering blog level. Omit internal service names, endpoint paths, customer-specific details, and proprietary business logic. Focus on the pattern: what was the problem class, what was the decision, what was the consequence.'
       : '';
-    return `Issue context (what this commit resolves):\n${lines.join('\n\n')}\n\nUse this as the tension source for the narrative. Do not invent additional problems beyond what is described here.${privacyNote}\n`;
+    return `Issue context (what this commit resolves):\n${lines.join('\n\n')}\n\nUse this as the tension source for the narrative. Do not invent additional problems beyond what is described here.${openNote}${privacyNote}\n`;
   })();
 
   const reviewBlock = (() => {
@@ -671,7 +675,10 @@ function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean
       ? `Review context (${count} change request${count !== 1 ? 's' : ''} before merge):`
       : 'Review context:';
     const lines = reviewSummaries.map((r) => `- ${r.state}: "${r.body}"`);
-    return `${header}\n${lines.join('\n')}\n\nThe iteration process is part of the story — the author refined the design under reviewer feedback.\n`;
+    const arcSignal = count > 0
+      ? ' This is a signal of tradeoff_made or broken_assumption arc.'
+      : '';
+    return `${header}\n${lines.join('\n')}\n\nThe iteration process is part of the story — the author refined the design under reviewer feedback.${arcSignal}\n`;
   })();
 
   return `<contributor_voice>

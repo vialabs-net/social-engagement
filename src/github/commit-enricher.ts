@@ -12,6 +12,7 @@ export interface IssueRef {
   readonly bodySnippet?: string;
   readonly totalReactions: number;
   readonly totalComments: number;
+  readonly state: 'OPEN' | 'CLOSED';
 }
 
 export interface ReviewSummary {
@@ -188,6 +189,7 @@ async function resolvePrContext(
       bodySnippet: issue.bodySnippet,
       totalReactions: issue.totalReactions,
       totalComments: issue.totalComments,
+      state: issue.state,
     }));
 
     const reviewSummaries: ReviewSummary[] = pr.timelineItems
