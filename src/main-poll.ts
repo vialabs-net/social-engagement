@@ -8,6 +8,7 @@ import { loadConfig } from './config/loader.js';
 import { logger } from './utils/logger.js';
 import { bestEffort } from './utils/best-effort.js';
 import { isInteresting } from './utils/commit-filter.js';
+import { detectCommitIntent, computeCollaborationWeight } from './utils/commit-classifier.js';
 import { GitHubClient } from './github/client.js';
 import { pollNewPushEvents } from './github/events-poller.js';
 import { enrichCommit, type EnrichedCommit } from './github/commit-enricher.js';
@@ -156,6 +157,7 @@ async function main(): Promise<void> {
 
       // Enrich commit
       const commit = await enrichCommit(github, owner, repo, pushCommit.sha, pushCommit.authorLogin, pushEvent.ref);
+      const collaborationWeight = computeCollaborationWeight(commit.prContext);
 
       // Rule-based filter — zero API cost
       const filterResult = isInteresting(
@@ -203,6 +205,13 @@ async function main(): Promise<void> {
         modules,
         recentModuleIds,
       );
+
+      const commitIntent = detectCommitIntent({
+        message: commit.message,
+        branchRef: commit.branchRef,
+        prTitle: commit.prContext?.prTitle,
+        moduleIds: pipelineFindings.map((f) => f.moduleId),
+      });
 
       // Deposit weak signals (best-effort — never blocks post generation)
       const depositNowIso = new Date().toISOString();

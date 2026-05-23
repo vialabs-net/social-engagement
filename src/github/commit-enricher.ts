@@ -31,6 +31,7 @@ export interface PrContext {
   readonly closingIssues?: ReadonlyArray<IssueRef>;
   readonly reviewSummaries?: ReadonlyArray<ReviewSummary>;
   readonly changesRequestedCount?: number;
+  readonly timelineItemsCount?: number;
   readonly supersededEvidence?: {
     readonly supersededByPr?: number;
     readonly maintainerComment?: string;
@@ -51,6 +52,7 @@ export interface EnrichedCommit {
   languages: string[];
   committedAt: string;
   isPrivateRepo: boolean;
+  branchRef?: string;
   prContext?: PrContext;
 }
 
@@ -215,6 +217,7 @@ async function resolvePrContext(
       closingIssues: closingIssues.length > 0 ? closingIssues : undefined,
       reviewSummaries: reviewSummaries.length > 0 ? reviewSummaries : undefined,
       changesRequestedCount: changesRequestedCount > 0 ? changesRequestedCount : undefined,
+      timelineItemsCount: pr.timelineItems.length > 0 ? pr.timelineItems.length : undefined,
       supersededEvidence,
     };
   } catch {
@@ -287,6 +290,7 @@ export async function enrichCommit(
     languages,
     committedAt: raw.commit.committer?.date ?? new Date().toISOString(),
     isPrivateRepo,
+    branchRef,
     prContext,
   };
 }
