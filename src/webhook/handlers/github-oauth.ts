@@ -65,7 +65,9 @@ export async function handleGitHubMemberCallback(
   clientSecret: string,
   webhookSecret: string,
 ): Promise<{ status: number; location: string }> {
-  const installationId = parseInt(state, 10);
+  const isPostsRedirect = state.startsWith('posts:');
+  const rawId = isPostsRedirect ? state.slice('posts:'.length) : state;
+  const installationId = parseInt(rawId, 10);
   if (!code || isNaN(installationId)) {
     logger.warn('github.member_callback.invalid_params', { state });
     return { status: 302, location: '/member/onboard?error=invalid_params' };
@@ -111,9 +113,10 @@ export async function handleGitHubMemberCallback(
 
   const memberToken = createMemberToken(installationId, user.login, webhookSecret);
 
-  logger.info('github.member_callback.success', { installationId, login: user.login });
+  const destination = isPostsRedirect ? 'posts' : 'member/onboard';
+  logger.info('github.member_callback.success', { installationId, login: user.login, destination });
   return {
     status: 302,
-    location: `/member/onboard?installation_id=${installationId}&member_token=${encodeURIComponent(memberToken)}`,
+    location: `/${destination}?installation_id=${installationId}&member_token=${encodeURIComponent(memberToken)}`,
   };
 }
