@@ -364,3 +364,6 @@ CREATE INDEX IF NOT EXISTS idx_voice_retrieval
 
 -- R5: author voice quality rating — 1=👎 2=👍 NULL=unrated
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS voice_rating SMALLINT;
+
+-- R3: narrative arc type chosen by selectDevelopmentalAngle() — nullable (posts before R3 have no arc)
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS arc_type VARCHAR(30);

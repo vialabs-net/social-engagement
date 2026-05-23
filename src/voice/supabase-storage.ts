@@ -73,6 +73,7 @@ export class SupabaseStorage implements IVoiceStorage {
         match_connection: input.match_connection ?? null,
         generation_system: input.generation_system ?? null,
         opening_move: input.opening_move ?? null,
+        arc_type: input.arc_type ?? null,
         status: 'pending' satisfies PostStatus,
         tenant_id: this.tenantId,
       })
@@ -419,6 +420,22 @@ export class SupabaseStorage implements IVoiceStorage {
     const { data, error } = await query;
     if (error) throw new Error(`getRecentModuleIds failed: ${error.message}`);
     return (data ?? []).map((r) => (r as { top_module_id: string }).top_module_id);
+  }
+
+  async getRecentArcTypes(authorLogin: string | null, limit: number): Promise<string[]> {
+    let query = this.db
+      .from('voice_posts')
+      .select('arc_type')
+      .eq('tenant_id', this.tenantId)
+      .not('arc_type', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (authorLogin) query = query.eq('author_login', authorLogin);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`getRecentArcTypes failed: ${error.message}`);
+    return (data ?? []).map((r) => (r as { arc_type: string }).arc_type);
   }
 
   async hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {

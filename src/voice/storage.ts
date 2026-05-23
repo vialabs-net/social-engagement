@@ -78,6 +78,7 @@ export interface SaveDraftInput {
   match_connection?: string | null;
   generation_system?: 'v1' | 'v2_progressive' | null;
   opening_move?: string | null;
+  arc_type?: string | null;
 }
 
 export interface UpdatePublishedInput {
@@ -247,6 +248,9 @@ export interface IVoiceStorage {
    * Used by the pipeline to apply the freshness multiplier to recently-fired modules.
    */
   getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]>;
+
+  /** Get the last N arc_types for an author, ordered by created_at DESC. */
+  getRecentArcTypes(authorLogin: string | null, limit: number): Promise<string[]>;
 
   /** Get all posts with status='queued' for a given platform. */
   getQueuedPosts(platform: Platform): Promise<VoicePost[]>;
