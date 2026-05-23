@@ -23,7 +23,7 @@ import { ConfigSchema } from '../config/schema.js';
 import type { BootstrapPost, Config, VoiceProfile } from '../config/schema.js';
 import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
 import { resolveTenantSecrets } from '../security/tenant-secrets.js';
-import { filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
+import { applyPenalizedModules, filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
 import { computeVoiceStage } from '../voice/stage.js';
 import {
   buildModuleFireCounts,
@@ -431,15 +431,17 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const findings = filterFindingsByContentStrategy(pipelineFindings, authorState.voiceProfile);
+      const strategyFindings = filterFindingsByContentStrategy(pipelineFindings, authorState.voiceProfile);
 
-      if (findings.length === 0) {
+      if (strategyFindings.length === 0) {
         logger.info('worker.commit.skip.no_findings_after_strategy', {
           sha: commit.sha,
           focus_modules: authorState.voiceProfile.content_strategy.focus_modules ?? [],
         });
         continue;
       }
+
+      const findings = applyPenalizedModules(strategyFindings, authorState.voiceProfile);
 
       const skipPattern = matchesSkipPatterns(commit, findings, authorState.voiceProfile);
       if (skipPattern) {

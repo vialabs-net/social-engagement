@@ -146,12 +146,27 @@ export function deriveContentPreferences(outcomes: VoicePost[], now = new Date()
     industryContextPreference = 'neutral';
   }
 
+  const PENALIZE_REASONS = new Set(['off-topic', 'too-technical']);
+  const recentRejections = outcomes
+    .filter((post) => post.status === 'expired' && post.rejection_reason && post.top_module_id)
+    .slice(0, 10);
+  const rejectionCounts = new Map<string, number>();
+  for (const post of recentRejections) {
+    if (!PENALIZE_REASONS.has(post.rejection_reason!)) continue;
+    const moduleId = post.top_module_id!;
+    rejectionCounts.set(moduleId, (rejectionCounts.get(moduleId) ?? 0) + 1);
+  }
+  const penalizedModules = [...rejectionCounts.entries()]
+    .filter(([, count]) => count >= 3)
+    .map(([moduleId]) => moduleId);
+
   return {
     ...(preferredModules.length > 0 && { preferred_modules: preferredModules }),
     ...(discouragedHookStyles.length > 0 && { discouraged_hook_styles: discouragedHookStyles }),
     ...(typicalLengthDelta !== undefined && { typical_length_delta: typicalLengthDelta }),
     industry_context_preference: industryContextPreference,
     expired_rate_30d: Number(expiredRate30d.toFixed(3)),
+    ...(penalizedModules.length > 0 && { penalized_modules: penalizedModules }),
     updated_at: now.toISOString(),
   };
 }
