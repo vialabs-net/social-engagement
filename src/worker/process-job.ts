@@ -360,7 +360,6 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
       }
 
       const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined);
-      const collaborationWeight = computeCollaborationWeight(commit.prContext);
 
       const filterResult = isInteresting(
         {
@@ -410,13 +409,6 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         MODULE_REGISTRY,
         recentModuleIds,
       );
-
-      const commitIntent = detectCommitIntent({
-        message: commit.message,
-        branchRef: commit.branchRef,
-        prTitle: commit.prContext?.prTitle,
-        moduleIds: pipelineFindings.map((f) => f.moduleId),
-      });
 
       // Deposit weak signals (best-effort — never blocks post generation)
       const nowIso = new Date().toISOString();

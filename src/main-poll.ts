@@ -158,7 +158,6 @@ async function main(): Promise<void> {
 
       // Enrich commit
       const commit = await enrichCommit(github, owner, repo, pushCommit.sha, pushCommit.authorLogin, pushEvent.ref);
-      const collaborationWeight = computeCollaborationWeight(commit.prContext);
 
       // Rule-based filter — zero API cost
       const filterResult = isInteresting(
@@ -206,13 +205,6 @@ async function main(): Promise<void> {
         modules,
         recentModuleIds,
       );
-
-      const commitIntent = detectCommitIntent({
-        message: commit.message,
-        branchRef: commit.branchRef,
-        prTitle: commit.prContext?.prTitle,
-        moduleIds: pipelineFindings.map((f) => f.moduleId),
-      });
 
       // Deposit weak signals (best-effort — never blocks post generation)
       const depositNowIso = new Date().toISOString();
