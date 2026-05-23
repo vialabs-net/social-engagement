@@ -58,6 +58,7 @@ export interface VoicePost {
   publish_source: PublishSource | null;
   generation_system?: 'v1' | 'v2_progressive' | null;
   opening_move?: string | null;
+  arc_type?: string | null;
   rejection_reason?: string | null;
   voice_rating?: number | null;
 }

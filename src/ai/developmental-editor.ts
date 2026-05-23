@@ -17,6 +17,7 @@ export interface R3Context {
   readonly changesRequestedCount: number;
   readonly collaborationWeight:   number;
   readonly recentArcTypes:        ArcType[];
+  readonly discouragedArcTypes:   ArcType[];
 }
 
 export interface NarrativeScore {
@@ -128,14 +129,16 @@ function selectArc(
   candidates: ArcType[],
   commitIntent: CommitIntent,
   recentArcTypes: ArcType[],
+  discouragedArcTypes: ArcType[] = [],
 ): { arc: ArcType; arcPatternNote: string } {
   if (candidates.length === 0) return { arc: 'design_shipped', arcPatternNote: '' };
 
   const arcFreq = new Map<ArcType, number>();
   for (const a of recentArcTypes) arcFreq.set(a, (arcFreq.get(a) ?? 0) + 1);
-  const penalized = new Set(
-    [...arcFreq.entries()].filter(([, n]) => n >= 3).map(([a]) => a),
-  );
+  const penalized = new Set([
+    ...([...arcFreq.entries()].filter(([, n]) => n >= 3).map(([a]) => a)),
+    ...discouragedArcTypes,
+  ]);
 
   const preferred = INTENT_ARC_PREFERENCE[commitIntent] ?? [];
   const intentMatch = preferred.find((a) => candidates.includes(a) && !penalized.has(a));
@@ -158,7 +161,7 @@ export function selectDevelopmentalAngle(ctx: R3Context): DevelopmentalAngle | n
 
   const { finding: lead, score } = selectLeadFinding(ctx.findings, ctx);
   const candidates = candidateArcs(lead, ctx);
-  const { arc, arcPatternNote } = selectArc(candidates, ctx.commitIntent, ctx.recentArcTypes);
+  const { arc, arcPatternNote } = selectArc(candidates, ctx.commitIntent, ctx.recentArcTypes, ctx.discouragedArcTypes);
 
   const tension = lead.evidence?.before?.trim()
     ? lead.evidence.before.trim().slice(0, 150)

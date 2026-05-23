@@ -325,6 +325,7 @@ async function main(): Promise<void> {
             changesRequestedCount: candidate.commit.prContext?.changesRequestedCount ?? 0,
             collaborationWeight: candidateCollabWeight,
             recentArcTypes,
+            discouragedArcTypes: (candidate.voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
           });
           if (angle) {
             developmentalAngle = buildAngleBlock(angle, candidateCollabWeight);

@@ -147,18 +147,31 @@ export function deriveContentPreferences(outcomes: VoicePost[], now = new Date()
   }
 
   const PENALIZE_REASONS = new Set(['off-topic', 'too-technical']);
-  const recentRejections = outcomes
-    .filter((post) => post.status === 'expired' && post.rejection_reason && post.top_module_id)
-    .slice(0, 10);
-  const rejectionCounts = new Map<string, number>();
-  for (const post of recentRejections) {
+  const modulePenaltyCounts = new Map<string, number>();
+  // Expired posts with topic-mismatch rejection reason
+  for (const post of outcomes.filter((p) => p.status === 'expired' && p.rejection_reason && p.top_module_id).slice(0, 10)) {
     if (!PENALIZE_REASONS.has(post.rejection_reason!)) continue;
-    const moduleId = post.top_module_id!;
-    rejectionCounts.set(moduleId, (rejectionCounts.get(moduleId) ?? 0) + 1);
+    const id = post.top_module_id!;
+    modulePenaltyCounts.set(id, (modulePenaltyCounts.get(id) ?? 0) + 1);
   }
-  const penalizedModules = [...rejectionCounts.entries()]
+  // Published posts the author explicitly disliked (👎)
+  for (const post of published.filter((p) => p.voice_rating === 1 && p.top_module_id).slice(0, 10)) {
+    const id = post.top_module_id!;
+    modulePenaltyCounts.set(id, (modulePenaltyCounts.get(id) ?? 0) + 1);
+  }
+  const penalizedModules = [...modulePenaltyCounts.entries()]
     .filter(([, count]) => count >= 3)
     .map(([moduleId]) => moduleId);
+
+  // Penalize arc_types where 'hook' rejection is recurrent
+  const arcPenaltyCounts = new Map<string, number>();
+  for (const post of outcomes.filter((p) => p.status === 'expired' && p.rejection_reason === 'hook' && p.arc_type).slice(0, 10)) {
+    const arc = post.arc_type!;
+    arcPenaltyCounts.set(arc, (arcPenaltyCounts.get(arc) ?? 0) + 1);
+  }
+  const penalizedArcTypes = [...arcPenaltyCounts.entries()]
+    .filter(([, count]) => count >= 3)
+    .map(([arc]) => arc);
 
   return {
     ...(preferredModules.length > 0 && { preferred_modules: preferredModules }),
@@ -167,6 +180,7 @@ export function deriveContentPreferences(outcomes: VoicePost[], now = new Date()
     industry_context_preference: industryContextPreference,
     expired_rate_30d: Number(expiredRate30d.toFixed(3)),
     ...(penalizedModules.length > 0 && { penalized_modules: penalizedModules }),
+    ...(penalizedArcTypes.length > 0 && { penalized_arc_types: penalizedArcTypes }),
     updated_at: now.toISOString(),
   };
 }
