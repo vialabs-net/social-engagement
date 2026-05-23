@@ -245,6 +245,11 @@ export function buildUserPrompt(
     parts.push(buildContributorVoiceBlock(commit.prContext, commit.isPrivateRepo));
   }
 
+  if (developmentalAngle) {
+    parts.push('');
+    parts.push(developmentalAngle);
+  }
+
   const hasVerifiableFacts = findings.some((f) => f.verifiableFacts && f.verifiableFacts.length > 0);
 
   parts.push('');
