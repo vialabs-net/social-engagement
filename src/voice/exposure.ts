@@ -8,17 +8,27 @@ export interface ExposureCandidate {
   published?: string | null;
   text?: string;
   edit_ratio?: number | null;
+  voice_rating?: number | null;
   top_module_id?: string | null;
 }
 
 export const MAX_EXPOSURE_CHARS = 4000;
 
-export function exposureWeight(editRatio: number | null | undefined): number {
-  const value = editRatio ?? 0;
-  if (value < 0.3) return 0;
-  if (value <= 0.65) return 1.2;
-  if (value <= 0.9) return 1.0;
-  return 0.8;
+export function exposureWeight(post: ExposureCandidate): number {
+  const ratio = post.edit_ratio ?? 0;
+  if (ratio < 0.3) return 0;
+  if (post.voice_rating === 1) return 0;
+
+  if (post.voice_rating === 2) {
+    if (ratio > 0.90) return 1.6;
+    if (ratio > 0.65) return 1.3;
+    return 1.1;
+  }
+
+  // Unrated — preserve previous behaviour
+  if (ratio > 0.90) return 0.8;
+  if (ratio > 0.65) return 1.0;
+  return 1.2;
 }
 
 export function selectExposureExamples(
@@ -34,7 +44,7 @@ export function selectExposureExamples(
   const shuffled = weightedShuffle(
     pool.map((post) => ({
       item: post,
-      weight: exposureWeight(post.edit_ratio),
+      weight: exposureWeight(post),
     })),
     rng,
   );
