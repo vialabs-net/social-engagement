@@ -240,7 +240,7 @@ export function buildUserPrompt(
 
   if (commit.prContext) {
     parts.push('');
-    parts.push(buildContributorVoiceBlock(commit.prContext));
+    parts.push(buildContributorVoiceBlock(commit.prContext, commit.isPrivateRepo));
   }
 
   const hasVerifiableFacts = findings.some((f) => f.verifiableFacts && f.verifiableFacts.length > 0);
@@ -250,6 +250,11 @@ export function buildUserPrompt(
   if (hasVerifiableFacts) {
     parts.push('Where a finding includes a <facts> block: you may state, rephrase, condense, or omit any listed fact. You may add ONE interpretive sentence connecting the facts to a broader engineering principle.');
     parts.push('You MAY NOT: state structural facts not in the list; compare to a prior state unless the commit body explicitly states the prior behavior; make absence claims about code you cannot see; describe internal logic of files whose contents are not in the facts list.');
+    parts.push('');
+  } else {
+    parts.push('None of the findings include a verified-facts list.');
+    parts.push('Do not state specific percentages, timing measurements, or line counts — they cannot be verified from the information provided.');
+    parts.push('You may describe the structural change (e.g., "removed nested branching") but not quantify it (e.g., "removed 40% of branches").');
     parts.push('');
   }
   parts.push('Write one main post and one short variant.');
@@ -596,8 +601,8 @@ function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
   return null;
 }
 
-function buildContributorVoiceBlock(prContext: PrContext): string {
-  const { outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence } = prContext;
+function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean): string {
+  const { outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence, prDescription } = prContext;
 
   // Gate: medium confidence is not strong enough to assert incorporation in the post.
   const effectiveOutcome =
@@ -619,10 +624,18 @@ function buildContributorVoiceBlock(prContext: PrContext): string {
       ? `Maintainer reference: "${supersededEvidence.maintainerComment}"\n`
       : '';
 
+  const descriptionBlock = prDescription
+    ? `PR description (author's own words — use as context, do not quote directly):\n${prDescription}\n`
+    : '';
+
+  const privateNote = isPrivateRepo && prDescription
+    ? 'The PR description comes from a private repository. Apply the same abstraction rules as for the rest of the code: do not surface internal service names, business identifiers, or customer-specific terminology in the post.\n'
+    : '';
+
   return `<contributor_voice>
 This commit is from a fork. PR context: ${outcomeText}.
 PR title: "${prTitle}".
-${maintainerLine}
+${descriptionBlock}${privateNote}${maintainerLine}
 Rules:
 - Cite the project as ${upstreamOwner}/${upstreamRepo} (the upstream), not the fork.
 - If outcome is open: describe the work as submitted and under review, not as accepted. Do not predict reviewer reactions. Acceptable: "I proposed X to ${upstreamOwner}/${upstreamRepo}." Not acceptable: "I added X to ${upstreamOwner}/${upstreamRepo}."
