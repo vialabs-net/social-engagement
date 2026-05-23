@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { sealTenantSecrets } from '../../security/tenant-secrets.js';
 import { BufferClient } from '../../buffer/client.js';
 import { logger } from '../../utils/logger.js';
+import type { BootstrapPost } from '../../config/schema.js';
 
 // ---------------------------------------------------------------------------
 // Member token — encodes installation_id + github_login, HMAC-signed.
@@ -420,6 +421,41 @@ export async function handleMemberOnboardPost(
   if (upsertError) {
     logger.error('member_onboard.save_failed', { login, error: upsertError.message });
     return { status: 302, location: `/member/onboard?installation_id=${installationId}&member_token=${encodeURIComponent(memberToken)}&error=save_failed` };
+  }
+
+  // Seed voice_profiles so the pipeline finds bootstrap posts for this author
+  if (voices.length > 0) {
+    const now = new Date().toISOString();
+    const bootstrapPosts: BootstrapPost[] = voices.map((text) => ({ text, pasted_at: now }));
+
+    const { data: tenantProfile } = await db
+      .from('voice_profiles')
+      .select('voice')
+      .eq('tenant_id', tenantId)
+      .is('github_author_login', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const baseVoice = (tenantProfile?.voice ?? {}) as Record<string, unknown>;
+
+    const { error: profileError } = await db
+      .from('voice_profiles')
+      .upsert(
+        {
+          tenant_id: tenantId,
+          github_author_login: login,
+          voice: { ...baseVoice, bootstrap_posts: bootstrapPosts },
+          version: 1,
+        },
+        { onConflict: 'tenant_id,github_author_login' },
+      );
+
+    if (profileError) {
+      logger.error('member_onboard.voice_profile_seed_failed', { login, tenantId, error: profileError.message });
+    } else {
+      logger.info('member_onboard.voice_profile_seeded', { login, tenantId, bootstrapCount: voices.length });
+    }
   }
 
   logger.info('member_onboard.saved', { login, tenantId });
