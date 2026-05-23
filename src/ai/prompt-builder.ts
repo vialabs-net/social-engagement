@@ -164,6 +164,8 @@ export function buildUserPrompt(
   recentModuleIds: string[] = [],
   chapterContext?: string,
   industryContext?: string,
+  developmentalAngle?: string,
+  instagramEnabled = false,
 ): string {
   const parts: string[] = [];
 
@@ -273,13 +275,26 @@ export function buildUserPrompt(
   parts.push('Keep the main post under the configured hard cap. If needed, prefer fewer points and cleaner sentences over extra explanation.');
   parts.push('If <voice_exposure> exists, match its level of directness and structure without copying phrases literally.');
   parts.push('');
-  parts.push('<post_draft>');
-  parts.push('Main post here.');
-  parts.push('</post_draft>');
+  parts.push('Write the following variants:');
+  parts.push('- LinkedIn: full narrative post within the configured character cap.');
+  if (instagramEnabled) {
+    parts.push('- Instagram: first line ≤125 chars, must work as a standalone hook before "see more". Optional: 1-2 short supporting lines. Hashtags on last line only.');
+  }
+  parts.push('- Twitter: maximum density. One claim + mechanism. No filler.');
   parts.push('');
-  parts.push('<short_draft>');
-  parts.push('Short variant here.');
-  parts.push('</short_draft>');
+  parts.push('<linkedin_draft>');
+  parts.push('LinkedIn post here.');
+  parts.push('</linkedin_draft>');
+  parts.push('');
+  if (instagramEnabled) {
+    parts.push('<instagram_draft>');
+    parts.push('Instagram caption here.');
+    parts.push('</instagram_draft>');
+    parts.push('');
+  }
+  parts.push('<twitter_draft>');
+  parts.push('Twitter post here.');
+  parts.push('</twitter_draft>');
   parts.push('</task>');
 
   return parts.join('\n');
