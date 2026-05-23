@@ -9,6 +9,7 @@ import { detectOpeningMove } from '../voice/exposure.js';
 
 export interface GeneratedPosts {
   linkedinPost: string;   // clean LinkedIn text for direct posting
+  instagramPost: string;  // Instagram caption (empty string if Instagram disabled)
   shortPost: string;      // short variant for Twitter/X
   bufferText: string;     // combined text for Buffer Idea
   draftId: string;
@@ -23,6 +24,7 @@ export interface GeneratePostsOptions {
   recentModuleIds?: string[];
   chapterContext?: string;
   industryContext?: string;
+  developmentalAngle?: string;
   draftMetadata?: Partial<SaveDraftInput>;
   draftIndexToday?: number;
   varietyConstraint?: string;
@@ -55,6 +57,8 @@ export async function generatePosts(
     varietyConstraint: options.varietyConstraint,
   };
 
+  const instagramEnabled = config.platforms.instagram.enabled;
+
   const systemPrompt = buildSystemPrompt(config, options.voiceProfile, voiceContext);
   const userPrompt = buildUserPrompt(
     commit,
@@ -62,6 +66,8 @@ export async function generatePosts(
     options.recentModuleIds ?? [],
     options.chapterContext,
     options.industryContext,
+    options.developmentalAngle,
+    instagramEnabled,
   );
 
   logger.info('ai.generate.start', {
@@ -88,6 +94,7 @@ export async function generatePosts(
   }
 
   const post = enforceMainPostLength(parsed.post, maxChars);
+  const instagramPost = parsed.instagramPost ? enforceInstagramHook(parsed.instagramPost) : '';
   const shortPost = parsed.shortPost;
 
   const topFinding = findings[0]?.finding;
@@ -110,27 +117,60 @@ export async function generatePosts(
     opening_move: draftMetadata.opening_move ?? openingMove,
   });
 
-  // Buffer Idea text includes both variants so Liliana can copy per platform in the UI
-  const bufferText = `${post}\n\n─────────────────\n🐦 Twitter:\n${shortPost}`;
+  if (instagramEnabled && instagramPost) {
+    await storage.saveDraft({
+      commit_sha: commit.sha,
+      repo: commit.repo,
+      platform: 'instagram',
+      ai_draft: instagramPost,
+      top_finding: topFinding,
+      top_module_id: topModuleId,
+      findings_count: findingsCount,
+      ...draftMetadata,
+      generation_system: draftMetadata.generation_system ?? (options.voiceStage === 'cold' ? 'v1' : 'v2_progressive'),
+      opening_move: detectOpeningMove(instagramPost),
+    });
+  }
 
-  logger.info('ai.generate.done', { sha: commit.sha, draftId });
+  // Buffer Idea text includes all generated variants for manual platform selection in the UI
+  const bufferText = instagramEnabled && instagramPost
+    ? `${post}\n\n─────────────────\n📸 Instagram:\n${instagramPost}\n\n─────────────────\n🐦 Twitter:\n${shortPost}`
+    : `${post}\n\n─────────────────\n🐦 Twitter:\n${shortPost}`;
 
-  return { linkedinPost: post, shortPost, bufferText, draftId, openingMove };
+  logger.info('ai.generate.done', { sha: commit.sha, draftId, instagramEnabled });
+
+  return { linkedinPost: post, instagramPost, shortPost, bufferText, draftId, openingMove };
 }
 
-function parseResponse(raw: string): { post: string; shortPost: string } {
-  const postMatch = raw.match(/<post_draft>([\s\S]*?)<\/post_draft>/);
-  const shortMatch = raw.match(/<short_draft>([\s\S]*?)<\/short_draft>/);
+function parseResponse(raw: string): { post: string; instagramPost: string; shortPost: string } {
+  // Accept new linkedin_draft tag with fallback to legacy post_draft during transition
+  const linkedinMatch = raw.match(/<linkedin_draft>([\s\S]*?)<\/linkedin_draft>/)
+    ?? raw.match(/<post_draft>([\s\S]*?)<\/post_draft>/);
 
-  if (!postMatch || !shortMatch) {
+  const instagramMatch = raw.match(/<instagram_draft>([\s\S]*?)<\/instagram_draft>/);
+
+  // Accept new twitter_draft tag with fallback to legacy short_draft during transition
+  const twitterMatch = raw.match(/<twitter_draft>([\s\S]*?)<\/twitter_draft>/)
+    ?? raw.match(/<short_draft>([\s\S]*?)<\/short_draft>/);
+
+  if (!linkedinMatch || !twitterMatch) {
     logger.error('ai.parse.missing_tags', { preview: raw.slice(0, 200) });
     throw new Error('Claude response missing XML tags — draft discarded to avoid broken posts');
   }
 
   return {
-    post: (postMatch[1] ?? '').trim(),
-    shortPost: (shortMatch[1] ?? '').trim(),
+    post: (linkedinMatch[1] ?? '').trim(),
+    instagramPost: (instagramMatch?.[1] ?? '').trim(),
+    shortPost: (twitterMatch[1] ?? '').trim(),
   };
+}
+
+function enforceInstagramHook(text: string, maxHookChars = 125): string {
+  const lines = text.split('\n');
+  const firstLine = lines[0] ?? '';
+  if (firstLine.length <= maxHookChars) return text;
+  const trimmed = firstLine.slice(0, maxHookChars).replace(/\s\S*$/, '');
+  return [trimmed, ...lines.slice(1)].join('\n');
 }
 
 function enforceMainPostLength(post: string, maxChars: number): string {
