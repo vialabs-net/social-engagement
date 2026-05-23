@@ -196,7 +196,7 @@ export function selectDevelopmentalAngle(ctx: R3Context): DevelopmentalAngle | n
   };
 }
 
-export function buildAngleBlock(angle: DevelopmentalAngle): string {
+export function buildAngleBlock(angle: DevelopmentalAngle, collaborationWeight = 1.0): string {
   const { arcType, score, tension, resolution, consequence, angleHint, missingNote, arcPatternNote } = angle;
   const totalScore = score.total();
   const completeness = totalScore >= 6 ? 'high' : totalScore >= 3 ? 'medium' : 'low';
@@ -216,6 +216,15 @@ export function buildAngleBlock(angle: DevelopmentalAngle): string {
   }
   if (missingNote)    lines.push(`Missing: ${missingNote}`);
   if (arcPatternNote) lines.push(`Arc pattern: ${arcPatternNote}`);
+
+  if (collaborationWeight >= 1.4) {
+    lines.push('Collaboration signal: high (PR merged into upstream by maintainer)');
+    lines.push('→ The review process itself is part of the story — the author shipped work that required significant iteration.');
+    lines.push('→ Prefer arcs that show reasoning process (tradeoff_made, broken_assumption) over result-only arcs.');
+  } else if (collaborationWeight >= 1.15) {
+    lines.push(`Collaboration signal: medium (active PR discussion)`);
+    lines.push('→ This work went through review iteration — the decision process adds narrative value.');
+  }
 
   return `<developmental_angle>\n${lines.join('\n')}\n</developmental_angle>`;
 }

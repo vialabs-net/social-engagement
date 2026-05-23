@@ -335,7 +335,7 @@ async function main(): Promise<void> {
             recentArcTypes,
           });
           if (angle) {
-            developmentalAngle = buildAngleBlock(angle);
+            developmentalAngle = buildAngleBlock(angle, candidateCollabWeight);
             selectedArcType = angle.arcType;
           }
         } catch { /* fail-open */ }

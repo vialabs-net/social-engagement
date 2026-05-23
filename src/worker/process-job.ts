@@ -648,7 +648,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             recentArcTypes,
           });
           if (angle) {
-            developmentalAngle = buildAngleBlock(angle);
+            developmentalAngle = buildAngleBlock(angle, candidateCollabWeight);
             selectedArcType = angle.arcType;
           }
         } catch { /* fail-open */ }
