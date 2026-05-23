@@ -193,7 +193,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     : null;
 
   const [owner, repo] = job.repo.split('/') as [string, string];
-  const recentModuleIds = await storage.getRecentModuleIds(30);
+  const recentModuleIds = await storage.getRecentModuleIds(30, tenant.github_username);
   const recentModuleFireCounts = buildModuleFireCounts(recentModuleIds);
   const dayStartIso = getStartOfDayIso(config.scheduling.timezone);
   const dailyLimit = config.posting.max_daily_posts_per_author;
