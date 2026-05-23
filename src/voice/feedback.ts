@@ -59,10 +59,10 @@ export function classifyHookStyle(text: string): HookStyle {
 
 export function deriveContentPreferences(outcomes: VoicePost[], now = new Date()): ContentPreferences {
   const published = outcomes.filter((post) => post.status === 'published');
-  // Exclude linkedin_direct posts from edit-signal computation: their edit_ratio is
-  // hardcoded 1.0 (no human review step), so they would artificially suppress hook/length signals.
+  // Exclude linkedin_direct (edit_ratio hardcoded 1.0) and 👎-rated posts (author
+  // explicitly rejected them) from hook/length signal computation.
   const latestPublished = published
-    .filter((post) => post.publish_source !== 'linkedin_direct')
+    .filter((post) => post.publish_source !== 'linkedin_direct' && post.voice_rating !== 1)
     .slice(0, 10);
   const recentWindowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
