@@ -404,13 +404,21 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(result.changes > 0);
   }
 
-  getRecentModuleIds(days: number): Promise<string[]> {
-    const rows = this.db.prepare(`
-      SELECT top_module_id FROM voice_posts
-      WHERE tenant_id = ?
-        AND created_at >= datetime('now', '-' || ? || ' days')
-        AND top_module_id IS NOT NULL
-    `).all(this.tenantId, days) as { top_module_id: string }[];
+  getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]> {
+    const rows = authorLogin
+      ? this.db.prepare(`
+          SELECT top_module_id FROM voice_posts
+          WHERE tenant_id = ?
+            AND created_at >= datetime('now', '-' || ? || ' days')
+            AND top_module_id IS NOT NULL
+            AND author_login = ?
+        `).all(this.tenantId, days, authorLogin) as { top_module_id: string }[]
+      : this.db.prepare(`
+          SELECT top_module_id FROM voice_posts
+          WHERE tenant_id = ?
+            AND created_at >= datetime('now', '-' || ? || ' days')
+            AND top_module_id IS NOT NULL
+        `).all(this.tenantId, days) as { top_module_id: string }[];
     return Promise.resolve(rows.map((r) => r.top_module_id));
   }
 

@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   );
 
   logger.info('poll.events_found', { count: events.length });
-  const recentModuleIds = await storage.getRecentModuleIds(30);
+  const recentModuleIds = await storage.getRecentModuleIds(30, config.author.github_username);
   const recentModuleFireCounts = buildModuleFireCounts(recentModuleIds);
   const dayStartIso = getStartOfDayIso(config.scheduling.timezone);
   const dailyLimit = config.posting.max_daily_posts_per_author;

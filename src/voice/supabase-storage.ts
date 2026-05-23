@@ -405,15 +405,18 @@ export class SupabaseStorage implements IVoiceStorage {
     return [...authorSet];
   }
 
-  async getRecentModuleIds(days: number): Promise<string[]> {
+  async getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]> {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await this.db
+    let query = this.db
       .from('voice_posts')
       .select('top_module_id')
       .eq('tenant_id', this.tenantId)
       .gte('created_at', since)
       .not('top_module_id', 'is', null);
 
+    if (authorLogin) query = query.eq('author_login', authorLogin);
+
+    const { data, error } = await query;
     if (error) throw new Error(`getRecentModuleIds failed: ${error.message}`);
     return (data ?? []).map((r) => (r as { top_module_id: string }).top_module_id);
   }
