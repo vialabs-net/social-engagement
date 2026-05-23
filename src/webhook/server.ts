@@ -11,6 +11,7 @@ import { handleOnboardGet, handleOnboardPost } from './handlers/onboard.js';
 import { handleLinkedInRedirect, handleLinkedInCallback, handleLinkedInMemberRedirect, handleLinkedInMemberCallback } from './handlers/linkedin-oauth.js';
 import { handleGitHubCallback, handleGitHubMemberCallback } from './handlers/github-oauth.js';
 import { handleMemberOnboardGet, handleMemberOnboardPost } from './handlers/member-onboard.js';
+import { handlePostRejection } from './handlers/posts-feedback.js';
 import { VALID_REJECTION_REASONS } from '../review/notifier.js';
 import { logger } from '../utils/logger.js';
 
@@ -311,6 +312,31 @@ const server = createServer((req, res) => {
       logger.error('feedback.error', { error: String(err) });
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Internal error');
+    });
+    return;
+  }
+
+  // POST /posts/:id/reject — expire a pending/scheduled post with a structured reason
+  const rejectMatch = path.match(/^\/posts\/([^/]+)\/reject$/);
+  if (req.method === 'POST' && rejectMatch) {
+    const postId = rejectMatch[1]!;
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const reason = params.get('reason') ?? '';
+      const memberToken = params.get('member_token') ?? '';
+      const installationId = parseInt(params.get('installation_id') ?? '0', 10);
+
+      (async () => {
+        const result = await handlePostRejection(postId, memberToken, reason, installationId, db, WEBHOOK_SECRET);
+        res.writeHead(result.status, { 'Location': result.location });
+        res.end();
+      })().catch((err: unknown) => {
+        logger.error('posts.reject.error', { error: String(err) });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal error');
+      });
     });
     return;
   }
