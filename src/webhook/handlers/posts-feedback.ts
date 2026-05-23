@@ -10,6 +10,7 @@ interface PostRow {
   platform: string;
   edit_ratio: number | null;
   voice_rating: number | null;
+  status: string;
 }
 
 function editRatioBadge(ratio: number | null): string {
@@ -26,23 +27,43 @@ function renderPostsHtml(
   memberToken: string,
 ): string {
   const rows = (posts ?? []).map((p) => {
-    const ratingHtml = p.voice_rating !== null
-      ? `<span style="font-size:1.25rem">${p.voice_rating === 2 ? '👍' : '👎'}</span>`
-      : `<form method="POST" action="/posts/${p.id}/feedback" style="display:inline-flex;gap:8px;align-items:center">
+    const isPending = ['pending', 'scheduled', 'queued'].includes(p.status);
+
+    const actionHtml = isPending
+      ? `<form method="POST" action="/posts/${p.id}/reject" style="display:inline-flex;gap:8px;align-items:center">
            <input type="hidden" name="member_token" value="${memberToken}">
            <input type="hidden" name="installation_id" value="${installationId}">
-           <button name="rating" value="2" style="background:none;border:1px solid #3f3f46;border-radius:6px;padding:4px 10px;cursor:pointer;color:#f4f4f5;font-size:0.875rem">👍 sonó como yo</button>
-           <button name="rating" value="1" style="background:none;border:1px solid #3f3f46;border-radius:6px;padding:4px 10px;cursor:pointer;color:#f4f4f5;font-size:0.875rem">👎 no sonó como yo</button>
-         </form>`;
+           <select name="reason" style="background:#27272a;border:1px solid #3f3f46;border-radius:6px;padding:4px 8px;color:#f4f4f5;font-size:0.875rem">
+             <option value="hook">hook fallido</option>
+             <option value="tone">tono</option>
+             <option value="too-technical">muy técnico</option>
+             <option value="too-long">muy largo</option>
+             <option value="off-topic">fuera de tema</option>
+             <option value="factual">dato incorrecto</option>
+           </select>
+           <button type="submit" style="background:none;border:1px solid #dc2626;border-radius:6px;padding:4px 10px;cursor:pointer;color:#fca5a5;font-size:0.875rem">Rechazar</button>
+         </form>`
+      : p.voice_rating !== null
+        ? `<span style="font-size:1.25rem">${p.voice_rating === 2 ? '👍' : '👎'}</span>`
+        : `<form method="POST" action="/posts/${p.id}/feedback" style="display:inline-flex;gap:8px;align-items:center">
+             <input type="hidden" name="member_token" value="${memberToken}">
+             <input type="hidden" name="installation_id" value="${installationId}">
+             <button name="rating" value="2" style="background:none;border:1px solid #3f3f46;border-radius:6px;padding:4px 10px;cursor:pointer;color:#f4f4f5;font-size:0.875rem">👍 sonó como yo</button>
+             <button name="rating" value="1" style="background:none;border:1px solid #3f3f46;border-radius:6px;padding:4px 10px;cursor:pointer;color:#f4f4f5;font-size:0.875rem">👎 no sonó como yo</button>
+           </form>`;
+
+    const statusBadge = isPending
+      ? `<span style="background:#854d0e;color:#fef08a;border-radius:4px;padding:1px 6px;font-size:0.75rem;margin-left:6px">${p.status}</span>`
+      : '';
 
     const date = p.published_at ? new Date(p.published_at).toLocaleDateString('es-CL') : '—';
-    const published = p.published ? escapeHtml(p.published.slice(0, 300)) : '(sin texto publicado)';
+    const text = p.published ? escapeHtml(p.published.slice(0, 300)) : escapeHtml(p.ai_draft.slice(0, 300));
     return `<div style="background:#18181b;border:1px solid #27272a;border-radius:10px;padding:16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="color:#a1a1aa;font-size:0.8rem">${date} · ${p.platform}${editRatioBadge(p.edit_ratio)}</span>
-        ${ratingHtml}
+        <span style="color:#a1a1aa;font-size:0.8rem">${date} · ${p.platform}${editRatioBadge(p.edit_ratio)}${statusBadge}</span>
+        ${actionHtml}
       </div>
-      <p style="white-space:pre-wrap;font-size:0.875rem;line-height:1.6;color:#f4f4f5">${published}</p>
+      <p style="white-space:pre-wrap;font-size:0.875rem;line-height:1.6;color:#f4f4f5">${text}</p>
     </div>`;
   }).join('');
 
@@ -75,11 +96,10 @@ export async function handlePostsGet(
 
   const { data } = await db
     .from('voice_posts')
-    .select('id, published, ai_draft, published_at, platform, edit_ratio, voice_rating')
+    .select('id, published, ai_draft, published_at, platform, edit_ratio, voice_rating, status')
     .eq('author_login', parsed.login)
-    .eq('status', 'published')
-    .not('published', 'is', null)
-    .order('published_at', { ascending: false })
+    .in('status', ['published', 'pending', 'scheduled', 'queued'])
+    .order('published_at', { ascending: false, nullsFirst: true })
     .limit(20);
 
   return {
