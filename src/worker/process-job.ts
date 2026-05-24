@@ -1010,6 +1010,31 @@ async function runAccumulationCheck(
     repo: fullRepo,
   } as import('../github/commit-enricher.js').EnrichedCommit;
 
+  // R3: select narrative arc for synthesis — fail-open
+  let synthesisAngle: string | undefined;
+  try {
+    const synRecentArcs = (await storage.getRecentArcTypes(authorLogin, 5)) as ArcType[];
+    const synFindings: Finding[] = allSignals.map((s) => ({
+      moduleId: s.topic,
+      aspect: s.topic.replace(/_/g, ' '),
+      finding: s.specific_change,
+      technicalDetail: s.specific_change,
+      plainLanguage: s.specific_change,
+      interestScore: s.strength * 2,
+      contextHint: s.affected_files[0] ? `${s.affected_files[0]} in ${s.repo}` : undefined,
+    }));
+    const angle = selectDevelopmentalAngle({
+      findings: synFindings,
+      commitIntent: 'planned_feature',
+      closingIssues: [],
+      changesRequestedCount: 0,
+      collaborationWeight: 0,
+      recentArcTypes: synRecentArcs,
+      discouragedArcTypes: (authorState.voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
+    });
+    if (angle) synthesisAngle = buildAngleBlock(angle, 0);
+  } catch { /* fail-open — anti-repetition and arc disabled if query fails */ }
+
   const synthesisInputs = topicsToGenerate.map((item, i) => ({
     authorLogin,
     repo: fullRepo,
@@ -1022,6 +1047,7 @@ async function runAccumulationCheck(
     exposurePool,
     bootstrapPosts,
     draftIndexToday: authorState.todayDrafts.length + i,
+    developmentalAngle: synthesisAngle,
   }));
 
   // Phase 1: generate all buffer texts in parallel — fail-fast, no DB writes.
