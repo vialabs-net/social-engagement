@@ -100,12 +100,23 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
     parts.push(input.developmentalAngle);
   }
 
+  const instagramEnabled = input.config.platforms.instagram.enabled;
+
   parts.push('');
-  parts.push('Write the post. Wrap it in these XML tags exactly:');
+  parts.push('Write the following variants. Wrap each in these XML tags exactly:');
+  parts.push('');
   parts.push('<linkedin_draft>');
   parts.push('LinkedIn post here.');
   parts.push('</linkedin_draft>');
   parts.push('');
+  if (instagramEnabled) {
+    parts.push('- Instagram: first line ≤125 chars, must work as a standalone hook before "see more". Optional: 1-2 short supporting lines. Hashtags on last line only.');
+    parts.push('');
+    parts.push('<instagram_draft>');
+    parts.push('Instagram caption here.');
+    parts.push('</instagram_draft>');
+    parts.push('');
+  }
   parts.push('<opening_move>');
   parts.push('One-word label for the opening technique used (e.g. question, statistic, anecdote, contradiction, problem-first, declarative).');
   parts.push('</opening_move>');

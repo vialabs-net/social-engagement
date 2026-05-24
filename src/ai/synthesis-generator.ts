@@ -21,6 +21,7 @@ export interface SynthesisGeneratorInput {
   readonly signals: SignalEvent[];          // all unconsumed signals for the topic(s)
   readonly coherenceScore?: CoherenceScore; // only for arco
   readonly lastPostSummary?: string;
+  readonly developmentalAngle?: string;     // R3 arc guidance block
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -43,9 +44,12 @@ export interface BufferTextResult {
   readonly bufferText: string;
   readonly openingMove: string;
   readonly representativeSha: string;
+  readonly instagramText?: string;
 }
 
-const XML_BUFFER_TEXT_RE = /<buffer_text>([\s\S]*?)<\/buffer_text>/;
+// Accept linkedin_draft (current tag after R6) with fallback to legacy buffer_text
+const XML_BUFFER_TEXT_RE = /<linkedin_draft>([\s\S]*?)<\/linkedin_draft>|<buffer_text>([\s\S]*?)<\/buffer_text>/;
+const XML_INSTAGRAM_RE = /<instagram_draft>([\s\S]*?)<\/instagram_draft>/;
 const XML_OPENING_MOVE_RE = /<opening_move>([\s\S]*?)<\/opening_move>/;
 
 /**
@@ -81,11 +85,13 @@ export async function generateBufferText(
 
   const bufferTextMatch = XML_BUFFER_TEXT_RE.exec(raw);
   if (!bufferTextMatch) {
-    throw new Error(`synthesis-generator: missing <buffer_text> in response for ${input.gatillador}/${input.topics.join(',')}`);
+    throw new Error(`synthesis-generator: missing <linkedin_draft>/<buffer_text> in response for ${input.gatillador}/${input.topics.join(',')}`);
   }
 
+  const extractText = (m: RegExpExecArray): string => (m[1] ?? m[2] ?? '').trim();
+
   const maxChars = input.voiceProfile.post_length.max;
-  let bufferText = bufferTextMatch[1]?.trim() ?? '';
+  let bufferText = extractText(bufferTextMatch);
 
   if (bufferText.length > maxChars * 1.05) {
     logger.warn('synthesis-generator.length_exceeded_retry', {
@@ -96,19 +102,22 @@ export async function generateBufferText(
     const reinforced = `${userPrompt}\n\nREINFORCED: hard cap is ${maxChars} characters. Do not exceed it.`;
     const retryRaw = await client.complete(systemPrompt, reinforced);
     const retryMatch = XML_BUFFER_TEXT_RE.exec(retryRaw);
-    if (retryMatch) bufferText = retryMatch[1]?.trim() ?? bufferText;
+    if (retryMatch) bufferText = extractText(retryMatch);
   }
 
   if (bufferText.length < input.voiceProfile.post_length.min) {
     throw new Error(
-      `synthesis-generator: <buffer_text> too short (${bufferText.length} < ${input.voiceProfile.post_length.min}) for ${input.gatillador}/${input.topics.join(',')}`,
+      `synthesis-generator: post too short (${bufferText.length} < ${input.voiceProfile.post_length.min}) for ${input.gatillador}/${input.topics.join(',')}`,
     );
   }
 
   const openingMoveMatch = XML_OPENING_MOVE_RE.exec(raw);
   const openingMove = openingMoveMatch?.[1]?.trim() ?? 'unknown';
 
-  return { bufferText, openingMove, representativeSha };
+  const instagramMatch = XML_INSTAGRAM_RE.exec(raw);
+  const instagramText = instagramMatch?.[1]?.trim();
+
+  return { bufferText, openingMove, representativeSha, instagramText };
 }
 
 /**
@@ -121,6 +130,7 @@ export async function persistSynthesisPost(
   result: BufferTextResult,
 ): Promise<SynthesisResult> {
   const topTopic = input.topics[0] ?? null;
+  const generationSystem = input.voiceStage === 'cold' ? 'v1' : 'v2_progressive';
   const draftId = await storage.saveDraft({
     commit_sha: result.representativeSha,
     repo: input.repo,
@@ -129,9 +139,23 @@ export async function persistSynthesisPost(
     top_module_id: topTopic ?? undefined,
     findings_count: input.signals.length,
     author_login: input.authorLogin,
-    generation_system: input.voiceStage === 'cold' ? 'v1' : 'v2_progressive',
+    generation_system: generationSystem,
     opening_move: result.openingMove,
   });
+
+  if (input.config.platforms.instagram.enabled && result.instagramText) {
+    await storage.saveDraft({
+      commit_sha: result.representativeSha,
+      repo: input.repo,
+      platform: 'instagram',
+      ai_draft: result.instagramText,
+      top_module_id: topTopic ?? undefined,
+      findings_count: input.signals.length,
+      author_login: input.authorLogin,
+      generation_system: generationSystem,
+      opening_move: detectOpeningMove(result.instagramText),
+    });
+  }
 
   const detectedMove = detectOpeningMove(result.bufferText);
 
@@ -141,6 +165,7 @@ export async function persistSynthesisPost(
     topics: input.topics,
     signalCount: input.signals.length,
     openingMove: detectedMove,
+    instagramSaved: input.config.platforms.instagram.enabled && !!result.instagramText,
   });
 
   return { draftId, bufferText: result.bufferText, openingMove: detectedMove };
