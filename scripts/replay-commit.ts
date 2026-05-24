@@ -16,6 +16,8 @@ import { runPipeline } from '../src/analysis/pipeline.js';
 import { buildSystemPrompt, buildUserPrompt } from '../src/ai/prompt-builder.js';
 import { AnthropicAdapter } from '../src/ai/anthropic-adapter.js';
 import { SupabaseStorage } from '../src/voice/supabase-storage.js';
+import { selectDevelopmentalAngle, buildAngleBlock, type ArcType } from '../src/ai/developmental-editor.js';
+import { detectCommitIntent, computeCollaborationWeight } from '../src/utils/commit-classifier.js';
 import { DEFAULT_VOICE_PROFILE } from '../src/config/schema.js';
 
 const SEP = '─'.repeat(72);
@@ -127,9 +129,46 @@ async function main(): Promise<void> {
 
   console.log(`profile: tone=${voiceProfile.tone} rhythm=${voiceProfile.rhythm ?? 'default'} max=${voiceProfile.post_length.max}chars`);
 
-  // ── Stage 5: Build prompt ────────────────────────────────────────────────
+  // ── Stage 5: R3 — narrative arc (fail-open) ─────────────────────────────
   console.log(`\n${SEP}`);
-  console.log('STAGE 5 — buildUserPrompt');
+  console.log('STAGE 5 — R3 narrative arc');
+  console.log(SEP);
+
+  let developmentalAngle: string | undefined;
+  try {
+    const recentArcs: ArcType[] = supabaseUrl && supabaseKey && authorLogin
+      ? ((await new SupabaseStorage(supabaseUrl, supabaseKey, tenantId).getRecentArcTypes(authorLogin, 5)) as ArcType[])
+      : [];
+    const commitIntent = detectCommitIntent({
+      message: commit.message,
+      branchRef: commit.branchRef,
+      prTitle: commit.prContext?.prTitle,
+      moduleIds: findings.map((f) => f.moduleId),
+    });
+    const collabWeight = computeCollaborationWeight(commit.prContext);
+    const angle = selectDevelopmentalAngle({
+      findings,
+      commitIntent,
+      closingIssues: commit.prContext?.closingIssues,
+      changesRequestedCount: commit.prContext?.changesRequestedCount ?? 0,
+      collaborationWeight: collabWeight,
+      recentArcTypes: recentArcs,
+      discouragedArcTypes: (voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
+    });
+    if (angle) {
+      developmentalAngle = buildAngleBlock(angle, collabWeight);
+      console.log(`  arc_type: ${angle.arcType}`);
+      console.log(`  tension:  ${angle.tension}`);
+    } else {
+      console.log('  No arc selected (not enough evidence)');
+    }
+  } catch (e) {
+    console.warn(`  R3 failed (${String(e)}) — skipping`);
+  }
+
+  // ── Stage 6: Build prompt ────────────────────────────────────────────────
+  console.log(`\n${SEP}`);
+  console.log('STAGE 6 — buildUserPrompt');
   console.log(SEP);
 
   const minConfig = {
@@ -145,15 +184,15 @@ async function main(): Promise<void> {
     { stage: 'cold', exposurePool: [], bootstrapPosts: [], commitSha: commit.sha, draftIndexToday: 0 },
   );
 
-  const userPrompt = buildUserPrompt(commit, findings);
+  const userPrompt = buildUserPrompt(commit, findings, [], undefined, undefined, developmentalAngle);
 
   console.log('\n[userPrompt excerpt — first 1500 chars]');
   console.log(userPrompt.slice(0, 1500));
   if (userPrompt.length > 1500) console.log(`... [${userPrompt.length - 1500} more chars]`);
 
-  // ── Stage 6: Claude call ─────────────────────────────────────────────────
+  // ── Stage 7: Claude call ─────────────────────────────────────────────────
   console.log(`\n${SEP}`);
-  console.log('STAGE 6 — Claude generation');
+  console.log('STAGE 7 — Claude generation');
   console.log(SEP);
 
   const ai = new AnthropicAdapter(anthropicKey);
@@ -165,13 +204,15 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // ── Stage 7: Parse and display final post ───────────────────────────────
+  // ── Stage 8: Parse and display final post ───────────────────────────────
   console.log(`\n${SEP}`);
-  console.log('STAGE 7 — final post');
+  console.log('STAGE 8 — final post');
   console.log(SEP);
 
-  const postMatch = rawResponse.match(/<post_draft>([\s\S]*?)<\/post_draft>/);
-  const shortMatch = rawResponse.match(/<short_draft>([\s\S]*?)<\/short_draft>/);
+  const postMatch = rawResponse.match(/<linkedin_draft>([\s\S]*?)<\/linkedin_draft>/)
+    ?? rawResponse.match(/<post_draft>([\s\S]*?)<\/post_draft>/);
+  const shortMatch = rawResponse.match(/<twitter_draft>([\s\S]*?)<\/twitter_draft>/)
+    ?? rawResponse.match(/<short_draft>([\s\S]*?)<\/short_draft>/);
 
   if (!postMatch || !shortMatch) {
     console.error('Claude response missing XML tags. Raw response:');
@@ -182,13 +223,13 @@ async function main(): Promise<void> {
   const mainPost = (postMatch[1] ?? '').trim();
   const shortPost = (shortMatch[1] ?? '').trim();
 
-  console.log('\n── MAIN POST ──────────────────────────────────────────────────────────\n');
+  console.log('\n── LINKEDIN ───────────────────────────────────────────────────────────\n');
   console.log(mainPost);
-  console.log('\n── SHORT VARIANT ──────────────────────────────────────────────────────\n');
+  console.log('\n── TWITTER/X ──────────────────────────────────────────────────────────\n');
   console.log(shortPost);
   console.log(`\n── STATS ──────────────────────────────────────────────────────────────`);
-  console.log(`main post: ${mainPost.length} chars (max ${voiceProfile.post_length.max})`);
-  console.log(`short:     ${shortPost.length} chars`);
+  console.log(`linkedin: ${mainPost.length} chars (max ${voiceProfile.post_length.max})`);
+  console.log(`twitter:  ${shortPost.length} chars`);
   console.log(`top module: ${findings[0]?.moduleId} (score ${findings[0]?.interestScore})`);
   console.log(`private repo: ${commit.isPrivateRepo}`);
   console.log('');

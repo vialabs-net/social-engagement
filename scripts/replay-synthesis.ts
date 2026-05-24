@@ -17,6 +17,9 @@ import { AnthropicAdapter } from '../src/ai/anthropic-adapter.js';
 import { generateBufferText } from '../src/ai/synthesis-generator.js';
 import { check, checkCrossVolume } from '../src/analysis/accumulation-engine.js';
 import { selectDevelopmentalAngle, buildAngleBlock, type ArcType } from '../src/ai/developmental-editor.js';
+import { matchFindingsToArticles } from '../src/content/matcher.js';
+import { buildIndustryContextBlock } from '../src/ai/prompt-builder.js';
+import { createEmbedder, createAIClient } from '../src/ai/factory.js';
 import { DEFAULT_VOICE_PROFILE } from '../src/config/schema.js';
 import type { SignalBankEntry, SignalEvent } from '../src/voice/storage.js';
 
@@ -38,9 +41,12 @@ async function main(): Promise<void> {
   if (!anthropicKey) { console.error('ANTHROPIC_API_KEY not set'); process.exit(1); }
   if (!supabaseUrl || !supabaseKey) { console.error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set'); process.exit(1); }
 
+  const openaiKey = process.env['OPENAI_API_KEY'] ?? '';
   const db = createClient(supabaseUrl, supabaseKey);
   const storage = new SupabaseStorage(supabaseUrl, supabaseKey, tenantId);
   const ai = new AnthropicAdapter(anthropicKey);
+  const matcherAi = createAIClient('anthropic', anthropicKey, 'claude-haiku-4-5-20251001', 400);
+  const embedder = openaiKey ? createEmbedder('openai', openaiKey, 'text-embedding-3-small') : null;
   const nowIso = new Date().toISOString();
 
   // ── Stage 1: Signal bank ────────────────────────────────────────────────
@@ -154,7 +160,39 @@ async function main(): Promise<void> {
     console.warn(`  R3 failed (${String(e)}) — skipping`);
   }
 
-  // ── Stage 5: Build synthesis input ──────────────────────────────────────
+  // ── Stage 5: Industry context (fail-open) ───────────────────────────────
+  console.log(`\n${SEP}`);
+  console.log(`STAGE 5 — industry context`);
+  console.log(SEP);
+
+  let industryContext: string | undefined;
+  if (embedder) {
+    try {
+      const synFindingsForMatch = allSignals.map((s: SignalEvent) => ({
+        moduleId: s.topic,
+        aspect: s.topic.replace(/_/g, ' '),
+        finding: s.specific_change,
+        technicalDetail: s.specific_change,
+        plainLanguage: s.specific_change,
+        interestScore: s.strength * 2,
+        contextHint: s.affected_files[0] ? `${s.affected_files[0]} in ${s.repo}` : undefined,
+      }));
+      const match = await matchFindingsToArticles(synFindingsForMatch, embedder, matcherAi, db);
+      if (match) {
+        industryContext = buildIndustryContextBlock({ connection: match.connection, articleUrl: match.articleUrl });
+        console.log(`  matched: ${match.articleTitle}`);
+        console.log(`  connection: ${match.connection}`);
+      } else {
+        console.log('  No article match found');
+      }
+    } catch (e) {
+      console.warn(`  Industry context failed (${String(e)}) — skipping`);
+    }
+  } else {
+    console.log('  Skipped — OPENAI_API_KEY not set');
+  }
+
+  // ── Stage 6: Build synthesis input ──────────────────────────────────────
   const gatillador = 'focal' as const;
   const minConfig = {
     author: { name: authorLogin, github_login: authorLogin },
@@ -177,19 +215,20 @@ async function main(): Promise<void> {
     bootstrapPosts: voiceProfile.bootstrap_posts ?? [],
     draftIndexToday: 0,
     developmentalAngle,
+    industryContext,
   };
 
-  // ── Stage 6: Claude synthesis ────────────────────────────────────────────
+  // ── Stage 7: Claude synthesis ────────────────────────────────────────────
   console.log(`\n${SEP}`);
-  console.log(`STAGE 6 — Claude synthesis (dry-run, signals NOT consumed)`);
+  console.log(`STAGE 7 — Claude synthesis (dry-run, signals NOT consumed)`);
   console.log(SEP);
   console.log(`  gatillador: ${gatillador}  topics: ${topics.join(', ')}  signals: ${allSignals.length}`);
 
   const result = await generateBufferText(ai, input);
 
-  // ── Stage 7: Result ──────────────────────────────────────────────────────
+  // ── Stage 8: Result ──────────────────────────────────────────────────────
   console.log(`\n${SEP}`);
-  console.log('STAGE 7 — generated synthesis post');
+  console.log('STAGE 8 — generated synthesis post');
   console.log(SEP);
   console.log('\n── POST ───────────────────────────────────────────────────────────────\n');
   console.log(result.bufferText);

@@ -777,6 +777,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         github,
         deps.appBaseUrl,
         accumNowIso,
+        embedder ?? null,
+        matcherAi,
+        deps.db,
       );
     } catch (err) {
       logger.error('worker.accumulation.error', { authorLogin, repo: job.repo, error: String(err) });
@@ -932,6 +935,9 @@ async function runAccumulationCheck(
   github: import('../github/client.js').GitHubClient,
   appBaseUrl: string,
   nowIso: string,
+  embedder: import('../ai/types.js').IEmbedder | null,
+  matcherAi: import('../ai/types.js').IAIClient,
+  db: import('@supabase/supabase-js').SupabaseClient,
 ): Promise<void> {
   bestEffort('worker.accumulation.half_lives',
     storage.updateHalfLivesForAuthor(authorLogin, fullRepo),
@@ -1035,6 +1041,28 @@ async function runAccumulationCheck(
     if (angle) synthesisAngle = buildAngleBlock(angle, 0);
   } catch { /* fail-open — anti-repetition and arc disabled if query fails */ }
 
+  // Industry context — fail-open
+  let synthesisIndustryContext: string | undefined;
+  if (embedder) {
+    try {
+      const synFindingsForMatch: Finding[] = allSignals.map((s) => ({
+        moduleId: s.topic,
+        aspect: s.topic.replace(/_/g, ' '),
+        finding: s.specific_change,
+        technicalDetail: s.specific_change,
+        plainLanguage: s.specific_change,
+        interestScore: s.strength * 2,
+        contextHint: s.affected_files[0] ? `${s.affected_files[0]} in ${s.repo}` : undefined,
+      }));
+      const match = await matchFindingsToArticles(synFindingsForMatch, embedder, matcherAi, db);
+      if (match) {
+        synthesisIndustryContext = buildIndustryContextBlock({ connection: match.connection, articleUrl: match.articleUrl });
+      }
+    } catch (err) {
+      logger.warn('worker.accumulation.industry_context.skipped', { authorLogin, repo: fullRepo, error: String(err) });
+    }
+  }
+
   const synthesisInputs = topicsToGenerate.map((item, i) => ({
     authorLogin,
     repo: fullRepo,
@@ -1048,6 +1076,7 @@ async function runAccumulationCheck(
     bootstrapPosts,
     draftIndexToday: authorState.todayDrafts.length + i,
     developmentalAngle: synthesisAngle,
+    industryContext: synthesisIndustryContext,
   }));
 
   // Phase 1: generate all buffer texts in parallel — fail-fast, no DB writes.

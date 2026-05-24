@@ -19,6 +19,7 @@ export interface SynthesisPromptInput {
   readonly coherenceScore?: CoherenceScore;       // only for arco
   readonly lastPostSummary?: string;
   readonly developmentalAngle?: string;           // R3 arc guidance block
+  readonly industryContext?: string;              // editorial tension frame from article match
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -64,6 +65,14 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
     parts.push(`  <span_days>${computeSpanDays(input.commitGroups)}</span_days>`);
     parts.push(`  <topics>${input.topics.join(', ')}</topics>`);
     parts.push('</coherence_evidence>');
+  }
+
+  // Industry context (editorial tension frame)
+  if (input.industryContext) {
+    parts.push('');
+    parts.push('<industry_context>');
+    parts.push(input.industryContext);
+    parts.push('</industry_context>');
   }
 
   // Synthesis task
