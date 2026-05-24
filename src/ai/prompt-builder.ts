@@ -275,7 +275,7 @@ export function buildUserPrompt(
   }
   parts.push('Use concrete implementation details. Do not invent files, numbers, or project context.');
   parts.push('If a finding touches AI, translate that into the human-made constraint, interface, or behavior change. Do not give the model authorship credit for the commit.');
-  parts.push('If <industry_context> is used, treat it as parallel validation from the industry, never as a citation or proof of the argument.');
+  parts.push('If <industry_context> is present, use it as the editorial frame — it names the unresolved tension the field is navigating that makes this commit worth writing about. The code is the evidence; the industry context is why the evidence matters. Never cite it as a source or proof.');
   parts.push('The main post must stay at or under the configured character cap.');
   parts.push('Keep the main post under the configured hard cap. If needed, prefer fewer points and cleaner sentences over extra explanation.');
   parts.push('If <voice_exposure> exists, match its level of directness and structure without copying phrases literally.');
@@ -308,18 +308,17 @@ export function buildUserPrompt(
 export function buildIndustryContextBlock(input: IndustryContextPromptInput): string {
   const sourceFamily = inferIndustrySourceFamily(input.articleUrl);
   const lines = [
-    'This is parallel industry signal, not source attribution.',
-    'The author is speaking from their own code and judgment. Do not imply they read the matched article.',
-    'Only use this if it reinforces a point already present in the commit and findings.',
-    'Keep it subordinate to the main argument. If removed, the post should still work.',
+    'This is the industry tension that makes the author\'s specific decision editorially significant.',
+    'The author is speaking from their own code and judgment — do not imply they read the matched article.',
     `Shared pattern: ${input.connection}`,
-    'Use this pattern to position the author\'s specific decision within the broader industry movement.',
-    'Be specific: name the pattern, say who else is navigating it (teams, companies, the field in general), and surface what is distinct or notable about how the author approached it.',
-    'The goal is not to say "others do this too" — it is to show why this particular implementation choice is interesting given what the industry is wrestling with.',
-    'Ask implicitly: who is dealing with this? are they solving it the same way? what is different here and why does that matter?',
+    'Use this as the frame, not the footnote: name the unresolved tension the field is navigating, then show how the author\'s decision is a concrete answer to it.',
+    'The technical detail in the commit is the evidence. The industry context is what explains why that evidence matters beyond this one codebase.',
+    'A reader who does not know this author should finish the post understanding both what was built and why the broader engineering community is still working through this class of problem.',
+    'Be specific: name the pattern and the tension it carries. Say what teams or the field in general are still trading off. Surface what is distinct or notable about how this author approached it.',
+    'Do not use the industry context to validate the author. Use it to show that the author is working on something that has no fully settled answer yet.',
     'Never mention the article title.',
     'Never write "according to", "as this article explains", "after reading", or "inspired by".',
-    'Never use filler phrases like "more and more teams are doing this" without specifying the pattern and the tension it resolves.',
+    'Never use filler phrases like "more and more teams are doing this" without naming the specific tradeoff that makes the pattern hard.',
   ];
 
   if (sourceFamily) {
