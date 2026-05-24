@@ -18,6 +18,7 @@ export interface SynthesisPromptInput {
   readonly commitGroups: SynthesisCommitGroup[]; // oldest first
   readonly coherenceScore?: CoherenceScore;       // only for arco
   readonly lastPostSummary?: string;
+  readonly developmentalAngle?: string;           // R3 arc guidance block
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -87,7 +88,27 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
   }
 
   parts.push(lastPostNote);
+
+  // R4: technical accuracy constraint — signals carry no verified fact list
+  parts.push('');
+  parts.push('Do not state specific percentages, timing measurements, or line counts — they cannot be verified from the signal descriptions provided.');
+  parts.push('You may describe structural changes (e.g., "removed nested branching") but not quantify them (e.g., "removed 40% of branches").');
   parts.push('</synthesis_task>');
+
+  if (input.developmentalAngle) {
+    parts.push('');
+    parts.push(input.developmentalAngle);
+  }
+
+  parts.push('');
+  parts.push('Write the post. Wrap it in these XML tags exactly:');
+  parts.push('<linkedin_draft>');
+  parts.push('LinkedIn post here.');
+  parts.push('</linkedin_draft>');
+  parts.push('');
+  parts.push('<opening_move>');
+  parts.push('One-word label for the opening technique used (e.g. question, statistic, anecdote, contradiction, problem-first, declarative).');
+  parts.push('</opening_move>');
 
   return parts.join('\n');
 }
