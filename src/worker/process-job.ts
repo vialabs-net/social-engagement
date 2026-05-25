@@ -69,6 +69,7 @@ export interface ProcessJobDeps {
   readonly anthropicApiKey: string;
   readonly openaiApiKey?: string;
   readonly appBaseUrl: string;
+  readonly githubPat?: string;
 }
 
 const MATCHER_MAX_TOKENS = 400;
@@ -184,6 +185,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   );
 
   const github = new GitHubClient(installationToken);
+  const patClient = deps.githubPat ? new GitHubClient(deps.githubPat) : undefined;
   const generationAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
   const matcherAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.classify_model, MATCHER_MAX_TOKENS);
   const haikuAi = createAIClient('anthropic', deps.anthropicApiKey, 'claude-haiku-4-5-20251001', HAIKU_MAX_TOKENS);
@@ -359,7 +361,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined);
+      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined, patClient);
 
       const filterResult = isInteresting(
         {

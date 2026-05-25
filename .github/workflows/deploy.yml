@@ -72,7 +72,7 @@ jobs:
             --region "$REGION" \
             --project "$PROJECT_ID" \
             --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GITHUB_APP_ID=$GITHUB_APP_ID,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
-            --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+            --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GITHUB_PERSONAL_ACCESS_TOKEN=github-personal-access-token:latest" \
             --quiet
 
       - name: Deploy scanner job
