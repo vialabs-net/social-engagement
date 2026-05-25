@@ -109,6 +109,10 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
     parts.push(input.developmentalAngle);
   }
 
+  parts.push('');
+  parts.push('Among all signals, identify the single decision or change that carries the strongest complete story (clearest tension + resolution). Write the post around that one decision.');
+  parts.push('Other signals may appear only as brief background context if they directly reinforce the same story. Do not list them as parallel items or give them equal narrative weight.');
+
   const instagramEnabled = input.config.platforms.instagram.enabled;
 
   parts.push('');
