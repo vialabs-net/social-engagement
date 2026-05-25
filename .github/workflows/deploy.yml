@@ -84,3 +84,13 @@ jobs:
             --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
             --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
             --quiet
+
+      - name: Deploy PAT poller job
+        run: |
+          gcloud run jobs update devcast-pat-poller \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --update-env-vars "SUPABASE_URL=$SUPABASE_URL,GCP_KMS_KEY_NAME=$GCP_KMS_KEY_NAME" \
+            --update-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest" \
+            --quiet
