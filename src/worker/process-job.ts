@@ -184,6 +184,29 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   );
 
   const github = new GitHubClient(installationToken);
+
+  // PAT fallback: resolve from the tenant's developer_profile.
+  // Used when the App installation token gets 403 (repo org without App installed).
+  let patClient: GitHubClient | undefined;
+  try {
+    const { data: tenantDevProfile } = await deps.db
+      .from('developer_profiles')
+      .select('github_pat, encrypted_dek')
+      .eq('github_login', tenant.github_username)
+      .maybeSingle();
+    if (tenantDevProfile) {
+      const row = tenantDevProfile as { github_pat: string | null; encrypted_dek: string | null };
+      const resolved = await resolveTenantSecrets({
+        encrypted_dek: row.encrypted_dek,
+        buffer_access_token: null,
+        github_pat: row.github_pat,
+      });
+      if (resolved.githubPat) patClient = new GitHubClient(resolved.githubPat);
+    }
+  } catch (err) {
+    logger.warn('worker.pat_fallback.load_failed', { tenant: tenant.github_username, error: String(err) });
+  }
+
   const generationAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
   const matcherAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.classify_model, MATCHER_MAX_TOKENS);
   const haikuAi = createAIClient('anthropic', deps.anthropicApiKey, 'claude-haiku-4-5-20251001', HAIKU_MAX_TOKENS);
@@ -359,7 +382,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined);
+      const commit = await enrichCommit(github, owner, repo, pushCommit.sha, tenant.github_username, job.ref ?? undefined, patClient);
 
       const filterResult = isInteresting(
         {

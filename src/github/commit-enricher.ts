@@ -239,14 +239,23 @@ export async function enrichCommit(
   sha: string,
   fallbackAuthorLogin: string | null,
   branchRef?: string,
+  patClient?: GitHubClient,
 ): Promise<EnrichedCommit> {
   let raw: RawCommitData;
+  let activeClient = client;
   try {
     raw = await client.getCommit(owner, repo, sha) as RawCommitData;
   } catch (err) {
     const e = err as { status?: number };
-    if (e.status === 404) throw new RepoNotFoundError(`${owner}/${repo}`);
-    throw err;
+    if (e.status === 403 && patClient) {
+      logger.info('github.enrich.pat_fallback', { owner, repo, sha: sha.slice(0, 8) });
+      activeClient = patClient;
+      raw = await patClient.getCommit(owner, repo, sha) as RawCommitData;
+    } else if (e.status === 404) {
+      throw new RepoNotFoundError(`${owner}/${repo}`);
+    } else {
+      throw err;
+    }
   }
 
   const diffs = parseCommitFiles(raw.files ?? []);
@@ -260,7 +269,7 @@ export async function enrichCommit(
   let prContext: PrContext | undefined;
 
   try {
-    const repoMeta = await client.getRepoMeta(owner, repo);
+    const repoMeta = await activeClient.getRepoMeta(owner, repo);
     isPrivateRepo = repoMeta.isPrivate;
 
     if (branchRef) {
@@ -268,11 +277,11 @@ export async function enrichCommit(
       const isPushToNonDefaultBranch = refBranch !== repoMeta.defaultBranch;
       if (isPushToNonDefaultBranch) {
         // Feature branch push: look up PRs by branch ref (open or merged PR for this branch)
-        prContext = await resolvePrContext(client, owner, repo, sha, branchRef, authorLogin);
+        prContext = await resolvePrContext(activeClient, owner, repo, sha, branchRef, authorLogin);
       } else {
         // Direct push to default branch: look up PRs by commit SHA.
         // Handles squash-merges and merge commits where the PR body has context.
-        prContext = await resolvePrContext(client, owner, repo, sha, null, authorLogin);
+        prContext = await resolvePrContext(activeClient, owner, repo, sha, null, authorLogin);
       }
     }
   } catch {

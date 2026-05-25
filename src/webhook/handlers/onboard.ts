@@ -54,6 +54,7 @@ function html(
   installationId: number,
   voiceProfile: VoiceProfile,
   saved: boolean,
+  githubPatMasked: string,
 ): string {
   const cfg = tenant.config;
   const author = (cfg['author'] as Record<string, unknown> | undefined) ?? {};
@@ -249,6 +250,13 @@ function html(
       </div>
 
       <div class="card">
+        <div class="section-title">GitHub <span class="optional">optional</span></div>
+        <label>Personal Access Token</label>
+        <input type="password" name="github_pat" value="${githubPatMasked}" placeholder="ghp_...">
+        <p class="hint">Only needed if you want to track repos in organizations where the GitHub App is not installed. Scope: <code>repo</code> (read-only).</p>
+      </div>
+
+      <div class="card">
         <div class="section-title">Buffer <span class="optional">optional</span></div>
         <label>API key</label>
         <input type="text" name="buffer_access_token" value="${maskToken(tenant.buffer_access_token)}" placeholder="Paste your Buffer API key">
@@ -307,9 +315,22 @@ export async function handleOnboardGet(
 
   const voiceProfile = await loadDefaultVoiceProfile(db, tenant.id);
 
+  let githubPatMasked = '';
+  try {
+    const { data: devProfile } = await db
+      .from('developer_profiles')
+      .select('github_pat')
+      .eq('github_login', tenant.github_username)
+      .maybeSingle();
+    const existing = (devProfile as { github_pat: string | null } | null)?.github_pat ?? null;
+    githubPatMasked = maskToken(existing);
+  } catch {
+    // Non-fatal — show empty field
+  }
+
   return {
     status: 200,
-    body: html({ ...tenant, active: true }, installationId, voiceProfile, saved),
+    body: html({ ...tenant, active: true }, installationId, voiceProfile, saved, githubPatMasked),
     contentType: 'text/html',
   };
 }
@@ -324,6 +345,7 @@ export async function handleOnboardPost(
   const website = params.get('website')?.trim() ?? '';
   const bufferToken = params.get('buffer_access_token')?.trim() ?? '';
   const bufferOrgId = params.get('buffer_org_id')?.trim() ?? '';
+  const githubPat = params.get('github_pat')?.trim() ?? '';
   const notificationRepo = params.get('notification_repo')?.trim() ?? '';
   const voice1 = params.get('voice_1')?.trim() ?? '';
   const voice2 = params.get('voice_2')?.trim() ?? '';
@@ -373,6 +395,7 @@ export async function handleOnboardPost(
   };
 
   const isNewToken = !!(bufferToken && !bufferToken.includes('••'));
+  const isNewPat = !!(githubPat && !githubPat.includes('••'));
   const effectiveOrgId = bufferOrgId
     || ((existingConfig['buffer'] as Record<string, unknown> | undefined)?.['organization_id'] as string | undefined)
     || '';
@@ -435,11 +458,11 @@ export async function handleOnboardPost(
   try {
     const { data: existingProfile } = await db
       .from('developer_profiles')
-      .select('encrypted_dek')
+      .select('encrypted_dek, github_pat')
       .eq('github_login', tenant.github_username)
       .maybeSingle();
 
-    const existingProfileDek = (existingProfile as { encrypted_dek: string | null } | null)?.encrypted_dek ?? null;
+    const existingProfileDek = (existingProfile as { encrypted_dek: string | null; github_pat: string | null } | null)?.encrypted_dek ?? null;
     const profileUpdates: Record<string, unknown> = {
       github_login: tenant.github_username,
       voice_bootstrap: voiceBootstrap,
@@ -449,8 +472,15 @@ export async function handleOnboardPost(
     if (effectiveOrgId) profileUpdates['buffer_org_id'] = effectiveOrgId;
     if (discoveredLinkedInChannelId) profileUpdates['buffer_linkedin_channel_id'] = discoveredLinkedInChannelId;
 
+    if (isNewPat) {
+      const sealed = await sealTenantSecrets({ githubPat }, existingProfileDek);
+      profileUpdates['github_pat'] = sealed.githubPat ?? null;
+      profileUpdates['encrypted_dek'] = sealed.encryptedDek;
+    }
+
     if (isNewToken) {
-      const sealed = await sealTenantSecrets({ bufferAccessToken: bufferToken }, existingProfileDek);
+      const dekForBuffer = (profileUpdates['encrypted_dek'] as string | undefined) ?? existingProfileDek;
+      const sealed = await sealTenantSecrets({ bufferAccessToken: bufferToken }, dekForBuffer);
       profileUpdates['buffer_access_token'] = sealed.bufferAccessToken ?? null;
       profileUpdates['encrypted_dek'] = sealed.encryptedDek;
     } else if (!existingProfileDek && tenant.buffer_access_token) {
