@@ -3,6 +3,8 @@ import { GitHubClient } from '../github/client.js';
 import { LinkedInClient, LinkedInAuthExpiredError } from '../linkedin/client.js';
 import { enrichCommit, type EnrichedCommit } from '../github/commit-enricher.js';
 import { isInteresting } from '../utils/commit-filter.js';
+import { detectCommitIntent, computeCollaborationWeight } from '../utils/commit-classifier.js';
+import { selectDevelopmentalAngle, buildAngleBlock, type ArcType } from '../ai/developmental-editor.js';
 import { runPipeline } from '../analysis/pipeline.js';
 import type { Finding } from '../analysis/types.js';
 import { MODULE_REGISTRY } from '../analysis/modules/index.js';
@@ -21,7 +23,7 @@ import { ConfigSchema } from '../config/schema.js';
 import type { BootstrapPost, Config, VoiceProfile } from '../config/schema.js';
 import type { IVoiceStorage, SaveDraftInput, VoicePost, VoiceStage } from '../voice/storage.js';
 import { resolveTenantSecrets } from '../security/tenant-secrets.js';
-import { filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
+import { applyPenalizedModules, filterFindingsByContentStrategy, matchesSkipPatterns, mergeVoiceProfile } from '../voice/profile-utils.js';
 import { computeVoiceStage } from '../voice/stage.js';
 import {
   buildModuleFireCounts,
@@ -191,7 +193,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     : null;
 
   const [owner, repo] = job.repo.split('/') as [string, string];
-  const recentModuleIds = await storage.getRecentModuleIds(30);
+  const recentModuleIds = await storage.getRecentModuleIds(30, tenant.github_username);
   const recentModuleFireCounts = buildModuleFireCounts(recentModuleIds);
   const dayStartIso = getStartOfDayIso(config.scheduling.timezone);
   const dailyLimit = config.posting.max_daily_posts_per_author;
@@ -429,15 +431,17 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         continue;
       }
 
-      const findings = filterFindingsByContentStrategy(pipelineFindings, authorState.voiceProfile);
+      const strategyFindings = filterFindingsByContentStrategy(pipelineFindings, authorState.voiceProfile);
 
-      if (findings.length === 0) {
+      if (strategyFindings.length === 0) {
         logger.info('worker.commit.skip.no_findings_after_strategy', {
           sha: commit.sha,
           focus_modules: authorState.voiceProfile.content_strategy.focus_modules ?? [],
         });
         continue;
       }
+
+      const findings = applyPenalizedModules(strategyFindings, authorState.voiceProfile);
 
       const skipPattern = matchesSkipPatterns(commit, findings, authorState.voiceProfile);
       if (skipPattern) {
@@ -485,6 +489,12 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
   for (const [authorKey, candidates] of candidatesByAuthor) {
     const authorState = authorStates.get(authorKey);
     if (!authorState) continue;
+
+    // Fetch arc history once per author (fail-open — anti-repetition disabled if query fails)
+    let recentArcTypes: ArcType[] = [];
+    try {
+      recentArcTypes = (await storage.getRecentArcTypes(authorState.authorLogin, 5)) as ArcType[];
+    } catch { /* fail-open */ }
 
     while (authorState.todayDrafts.length < dailyLimit && candidates.length > 0) {
       const [candidate] = selectTopDailyCandidates(candidates, authorState.todayDrafts, 1);
@@ -612,6 +622,34 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
           logger.info('content.match.skipped', { sha: candidate.commit.sha, reason: 'no_embedder' });
         }
 
+        // R3: select narrative arc — fail-open if no evidence
+        const candidateCollabWeight = computeCollaborationWeight(candidate.commit.prContext);
+        const candidateIntent = detectCommitIntent({
+          message: candidate.commit.message,
+          branchRef: candidate.commit.branchRef,
+          prTitle: candidate.commit.prContext?.prTitle,
+          moduleIds: candidate.findings.map((f) => f.moduleId),
+        });
+        let developmentalAngle: string | undefined;
+        let selectedArcType: string | null = null;
+        try {
+          const angle = selectDevelopmentalAngle({
+            findings: candidate.findings,
+            commitIntent: candidateIntent,
+            closingIssues: candidate.commit.prContext?.closingIssues,
+            changesRequestedCount: candidate.commit.prContext?.changesRequestedCount ?? 0,
+            collaborationWeight: candidateCollabWeight,
+            recentArcTypes,
+            discouragedArcTypes: (candidate.voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
+          });
+          if (angle) {
+            developmentalAngle = buildAngleBlock(angle, candidateCollabWeight);
+            selectedArcType = angle.arcType;
+          }
+        } catch { /* fail-open */ }
+
+        draftMetadata = { ...draftMetadata, arc_type: selectedArcType };
+
         const {
           linkedinPost,
           bufferText,
@@ -633,6 +671,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             recentModuleIds,
             chapterContext,
             industryContext,
+            developmentalAngle,
             draftMetadata,
             draftIndexToday,
             varietyConstraint,
@@ -738,6 +777,9 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         github,
         deps.appBaseUrl,
         accumNowIso,
+        embedder ?? null,
+        matcherAi,
+        deps.db,
       );
     } catch (err) {
       logger.error('worker.accumulation.error', { authorLogin, repo: job.repo, error: String(err) });
@@ -893,6 +935,9 @@ async function runAccumulationCheck(
   github: import('../github/client.js').GitHubClient,
   appBaseUrl: string,
   nowIso: string,
+  embedder: import('../ai/types.js').IEmbedder | null,
+  matcherAi: import('../ai/types.js').IAIClient,
+  db: import('@supabase/supabase-js').SupabaseClient,
 ): Promise<void> {
   bestEffort('worker.accumulation.half_lives',
     storage.updateHalfLivesForAuthor(authorLogin, fullRepo),
@@ -971,6 +1016,55 @@ async function runAccumulationCheck(
     repo: fullRepo,
   } as import('../github/commit-enricher.js').EnrichedCommit;
 
+  // R3: select narrative arc for synthesis — fail-open
+  let synthesisAngle: string | undefined;
+  try {
+    const synRecentArcs = (await storage.getRecentArcTypes(authorLogin, 5)) as ArcType[];
+    const synFindings: Finding[] = allSignals.map((s) => ({
+      moduleId: s.topic,
+      aspect: s.topic.replace(/_/g, ' '),
+      finding: s.specific_change,
+      technicalDetail: s.specific_change,
+      plainLanguage: s.specific_change,
+      interestScore: s.strength * 2,
+      contextHint: s.affected_files[0] ? `${s.affected_files[0]} in ${s.repo}` : undefined,
+    }));
+    const angle = selectDevelopmentalAngle({
+      findings: synFindings,
+      commitIntent: 'planned_feature',
+      closingIssues: [],
+      changesRequestedCount: 0,
+      collaborationWeight: 0,
+      recentArcTypes: synRecentArcs,
+      discouragedArcTypes: (authorState.voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
+    });
+    if (angle) synthesisAngle = buildAngleBlock(angle, 0);
+  } catch { /* fail-open — anti-repetition and arc disabled if query fails */ }
+
+  // Industry context — fail-open
+  let synthesisIndustryContext: string | undefined;
+  let synthesisFeaturedSignal: string | undefined;
+  if (embedder) {
+    try {
+      const synFindingsForMatch: Finding[] = allSignals.map((s) => ({
+        moduleId: s.topic,
+        aspect: s.topic.replace(/_/g, ' '),
+        finding: s.specific_change,
+        technicalDetail: s.specific_change,
+        plainLanguage: s.specific_change,
+        interestScore: s.strength * 2,
+        contextHint: s.affected_files[0] ? `${s.affected_files[0]} in ${s.repo}` : undefined,
+      }));
+      const match = await matchFindingsToArticles(synFindingsForMatch, embedder, matcherAi, db);
+      if (match) {
+        synthesisIndustryContext = buildIndustryContextBlock({ connection: match.connection, articleUrl: match.articleUrl });
+        synthesisFeaturedSignal = match.matchedFinding;
+      }
+    } catch (err) {
+      logger.warn('worker.accumulation.industry_context.skipped', { authorLogin, repo: fullRepo, error: String(err) });
+    }
+  }
+
   const synthesisInputs = topicsToGenerate.map((item, i) => ({
     authorLogin,
     repo: fullRepo,
@@ -983,6 +1077,9 @@ async function runAccumulationCheck(
     exposurePool,
     bootstrapPosts,
     draftIndexToday: authorState.todayDrafts.length + i,
+    developmentalAngle: synthesisAngle,
+    industryContext: synthesisIndustryContext,
+    featuredSignal: synthesisFeaturedSignal,
   }));
 
   // Phase 1: generate all buffer texts in parallel — fail-fast, no DB writes.

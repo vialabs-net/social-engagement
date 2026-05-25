@@ -61,12 +61,14 @@ CREATE TABLE IF NOT EXISTS events_state (
 );
 
 -- Atomic slot claiming — prevents double-booking across concurrent runs
+-- tenant_id added 2026-04-13: each tenant has its own slot namespace
 CREATE TABLE IF NOT EXISTS scheduled_slots (
   id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id       UUID NOT NULL REFERENCES tenants(id),
   platform        TEXT NOT NULL,
   scheduled_at    TIMESTAMPTZ NOT NULL,
   voice_post_id   TEXT REFERENCES voice_posts(id),
-  UNIQUE(platform, scheduled_at)           -- the invariant that makes scheduling safe
+  UNIQUE(tenant_id, platform, scheduled_at)
 );
 
 -- Fast retrieval of voice examples for prompt assembly
@@ -222,6 +224,7 @@ ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS publish_source           TEXT;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS generation_system        TEXT;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS opening_move             TEXT;
 ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS author_login             TEXT;
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS rejection_reason         TEXT;
 
 ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS leased_until               TIMESTAMPTZ;
 ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS idempotency_key            TEXT;
@@ -296,6 +299,26 @@ AS $$
    WHERE id = p_source_id;
 $$;
 
+-- Per-member credentials within a tenant (added 2026-04-14)
+-- Lookup order in worker: tenant_members first, fall back to tenants row.
+CREATE TABLE IF NOT EXISTS tenant_members (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id                   UUID NOT NULL REFERENCES tenants(id),
+  github_author_login         TEXT NOT NULL,
+  buffer_access_token         TEXT,
+  linkedin_access_token       TEXT,
+  linkedin_member_id          TEXT,
+  linkedin_token_expires_at   TIMESTAMPTZ,
+  encrypted_dek               TEXT,
+  voice_bootstrap             TEXT,
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id, github_author_login)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_members_lookup
+  ON tenant_members(tenant_id, github_author_login);
+
 -- ─────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
 -- ─────────────────────────────────────────────────────────
@@ -310,6 +333,7 @@ ALTER TABLE events_state             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_slots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE job_queue                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_members           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE content_sources          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE content_items            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE article_chunks           ENABLE ROW LEVEL SECURITY;
@@ -337,3 +361,9 @@ DROP INDEX IF EXISTS idx_voice_retrieval;
 CREATE INDEX IF NOT EXISTS idx_voice_retrieval
   ON voice_posts(platform, engagement_score DESC NULLS LAST, edit_ratio DESC NULLS LAST)
   WHERE status = 'published';
+
+-- R5: author voice quality rating — 1=👎 2=👍 NULL=unrated
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS voice_rating SMALLINT;
+
+-- R3: narrative arc type chosen by selectDevelopmentalAngle() — nullable (posts before R3 have no arc)
+ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS arc_type VARCHAR(30);

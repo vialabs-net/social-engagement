@@ -175,6 +175,8 @@ export class SqliteStorage implements IVoiceStorage {
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS generation_system TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS opening_move     TEXT;
       ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS tenant_id        TEXT;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS voice_rating     INTEGER;
+      ALTER TABLE voice_posts ADD COLUMN IF NOT EXISTS arc_type         TEXT;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sha_platform
         ON voice_posts(commit_sha, platform);
@@ -318,9 +320,9 @@ export class SqliteStorage implements IVoiceStorage {
       INSERT INTO voice_posts (
         id, commit_sha, repo, platform, ai_draft, top_finding, top_module_id, findings_count,
         author_login, context_status, has_industry_context, matched_article_id, matched_source_id,
-        match_strength, match_connection, generation_system, opening_move, status, tenant_id
+        match_strength, match_connection, generation_system, opening_move, arc_type, status, tenant_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
     `).run(
       id,
       input.commit_sha,
@@ -339,6 +341,7 @@ export class SqliteStorage implements IVoiceStorage {
       input.match_connection ?? null,
       input.generation_system ?? null,
       input.opening_move ?? null,
+      input.arc_type ?? null,
       this.tenantId,
     );
     return Promise.resolve(id);
@@ -404,14 +407,37 @@ export class SqliteStorage implements IVoiceStorage {
     return Promise.resolve(result.changes > 0);
   }
 
-  getRecentModuleIds(days: number): Promise<string[]> {
-    const rows = this.db.prepare(`
-      SELECT top_module_id FROM voice_posts
-      WHERE tenant_id = ?
-        AND created_at >= datetime('now', '-' || ? || ' days')
-        AND top_module_id IS NOT NULL
-    `).all(this.tenantId, days) as { top_module_id: string }[];
+  getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]> {
+    const rows = authorLogin
+      ? this.db.prepare(`
+          SELECT top_module_id FROM voice_posts
+          WHERE tenant_id = ?
+            AND created_at >= datetime('now', '-' || ? || ' days')
+            AND top_module_id IS NOT NULL
+            AND author_login = ?
+        `).all(this.tenantId, days, authorLogin) as { top_module_id: string }[]
+      : this.db.prepare(`
+          SELECT top_module_id FROM voice_posts
+          WHERE tenant_id = ?
+            AND created_at >= datetime('now', '-' || ? || ' days')
+            AND top_module_id IS NOT NULL
+        `).all(this.tenantId, days) as { top_module_id: string }[];
     return Promise.resolve(rows.map((r) => r.top_module_id));
+  }
+
+  getRecentArcTypes(authorLogin: string | null, limit: number): Promise<string[]> {
+    const rows = authorLogin
+      ? this.db.prepare(`
+          SELECT arc_type FROM voice_posts
+          WHERE tenant_id = ? AND arc_type IS NOT NULL AND author_login = ?
+          ORDER BY created_at DESC LIMIT ?
+        `).all(this.tenantId, authorLogin, limit) as { arc_type: string }[]
+      : this.db.prepare(`
+          SELECT arc_type FROM voice_posts
+          WHERE tenant_id = ? AND arc_type IS NOT NULL
+          ORDER BY created_at DESC LIMIT ?
+        `).all(this.tenantId, limit) as { arc_type: string }[];
+    return Promise.resolve(rows.map((r) => r.arc_type));
   }
 
   updatePublished(input: UpdatePublishedInput): Promise<void> {

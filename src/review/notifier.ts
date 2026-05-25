@@ -10,7 +10,7 @@ import type { EnrichedCommit } from '../github/commit-enricher.js';
  * The issue auto-closes after 48 hours via a comment (the workflow runs this
  * function, then a separate step closes old issues via the GitHub API).
  */
-const REJECTION_REASONS = ['hook', 'tone', 'too-technical', 'too-long', 'off-topic'] as const;
+const REJECTION_REASONS = ['hook', 'tone', 'too-technical', 'too-long', 'off-topic', 'factual'] as const;
 export type RejectionReason = typeof REJECTION_REASONS[number];
 export const VALID_REJECTION_REASONS: ReadonlySet<string> = new Set(REJECTION_REASONS);
 
@@ -20,6 +20,7 @@ const REASON_LABELS: Record<RejectionReason, string> = {
   'too-technical': 'muy técnico',
   'too-long': 'muy largo',
   'off-topic': 'fuera de tema',
+  'factual': 'dato incorrecto',
 };
 
 export async function notifyNewDraft(

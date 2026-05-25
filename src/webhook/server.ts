@@ -11,6 +11,7 @@ import { handleOnboardGet, handleOnboardPost } from './handlers/onboard.js';
 import { handleLinkedInRedirect, handleLinkedInCallback, handleLinkedInMemberRedirect, handleLinkedInMemberCallback } from './handlers/linkedin-oauth.js';
 import { handleGitHubCallback, handleGitHubMemberCallback } from './handlers/github-oauth.js';
 import { handleMemberOnboardGet, handleMemberOnboardPost } from './handlers/member-onboard.js';
+import { handlePostRejection, handlePostsGet, handlePostFeedback } from './handlers/posts-feedback.js';
 import { VALID_REJECTION_REASONS } from '../review/notifier.js';
 import { logger } from '../utils/logger.js';
 
@@ -311,6 +312,94 @@ const server = createServer((req, res) => {
       logger.error('feedback.error', { error: String(err) });
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Internal error');
+    });
+    return;
+  }
+
+  // GET /posts — voice feedback page
+  if (req.method === 'GET' && path === '/posts') {
+    const installationId = parseInt(query.get('installation_id') ?? '', 10);
+    const memberToken = query.get('member_token') ?? '';
+
+    if (!memberToken) {
+      const callbackUrl = `${APP_BASE_URL}/auth/github/member-callback`;
+      const state = `posts:${installationId}`;
+      const githubUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_APP_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}&scope=read:user`;
+      res.writeHead(302, { 'Location': githubUrl });
+      res.end();
+      return;
+    }
+
+    (async () => {
+      const result = await handlePostsGet(installationId, memberToken, db, WEBHOOK_SECRET);
+      if (result.location) {
+        res.writeHead(result.status, { 'Location': result.location });
+        res.end();
+      } else {
+        res.writeHead(result.status, { 'Content-Type': result.contentType ?? 'text/html' });
+        res.end(result.body ?? '');
+      }
+    })().catch((err: unknown) => {
+      logger.error('posts.get.error', { error: String(err) });
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal error');
+    });
+    return;
+  }
+
+  // POST /posts/:id/feedback — save voice_rating for a published post
+  const feedbackMatch = path.match(/^\/posts\/([^/]+)\/feedback$/);
+  if (req.method === 'POST' && feedbackMatch) {
+    const postId = feedbackMatch[1]!;
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const rating = parseInt(params.get('rating') ?? '', 10);
+      const memberToken = params.get('member_token') ?? '';
+      const comment = params.get('comment') ?? '';
+      const installationId = parseInt(params.get('installation_id') ?? '0', 10);
+
+      if (rating !== 1 && rating !== 2) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end('Invalid rating');
+        return;
+      }
+
+      (async () => {
+        const result = await handlePostFeedback(postId, memberToken, rating, comment, installationId, db, WEBHOOK_SECRET);
+        res.writeHead(result.status, { 'Location': result.location });
+        res.end();
+      })().catch((err: unknown) => {
+        logger.error('posts.feedback.error', { error: String(err) });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal error');
+      });
+    });
+    return;
+  }
+
+  // POST /posts/:id/reject — expire a pending/scheduled post with a structured reason
+  const rejectMatch = path.match(/^\/posts\/([^/]+)\/reject$/);
+  if (req.method === 'POST' && rejectMatch) {
+    const postId = rejectMatch[1]!;
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const reason = params.get('reason') ?? '';
+      const memberToken = params.get('member_token') ?? '';
+      const installationId = parseInt(params.get('installation_id') ?? '0', 10);
+
+      (async () => {
+        const result = await handlePostRejection(postId, memberToken, reason, installationId, db, WEBHOOK_SECRET);
+        res.writeHead(result.status, { 'Location': result.location });
+        res.end();
+      })().catch((err: unknown) => {
+        logger.error('posts.reject.error', { error: String(err) });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal error');
+      });
     });
     return;
   }

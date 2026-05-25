@@ -58,7 +58,9 @@ export interface VoicePost {
   publish_source: PublishSource | null;
   generation_system?: 'v1' | 'v2_progressive' | null;
   opening_move?: string | null;
+  arc_type?: string | null;
   rejection_reason?: string | null;
+  voice_rating?: number | null;
 }
 
 export interface SaveDraftInput {
@@ -78,6 +80,7 @@ export interface SaveDraftInput {
   match_connection?: string | null;
   generation_system?: 'v1' | 'v2_progressive' | null;
   opening_move?: string | null;
+  arc_type?: string | null;
 }
 
 export interface UpdatePublishedInput {
@@ -167,16 +170,23 @@ export interface RoutingDecisionInput {
 }
 
 export interface IVoiceStorage {
-  /** The tenant this storage instance is scoped to. All queries filter by this. */
+  /**
+   * Tenant this instance is bound to for drafts, posts, and tenant-default voice.
+   * Most queries filter by this; Supabase author-specific `getVoiceProfile` reads
+   * the latest `voice_profiles` row for that login across tenants (see `supabase-storage.ts`).
+   */
   readonly tenantId: string;
 
   /** Save an AI draft immediately after generation. Returns the new row ID. */
   saveDraft(input: SaveDraftInput): Promise<string>;
 
-  /** Lookup voice profile for a specific author, falling back to tenant default row only. */
+  /**
+   * Load voice JSON: Supabase uses global author resolution (newest `updated_at`), then
+   * tenant default; SQLite uses tenant + author only.
+   */
   getVoiceProfile(authorLogin: string | null): Promise<StoredVoiceProfile | null>;
 
-  /** Insert or update a voice profile row scoped to a specific author or tenant default. */
+  /** Insert or update a `voice_profiles` row for this `tenantId` (author or tenant default). */
   saveVoiceProfile(authorLogin: string | null, voice: VoiceProfile, expectedVersion?: number): Promise<boolean>;
 
   /** Update a post after Buffer publishes it (voice loop feedback). */
@@ -239,7 +249,10 @@ export interface IVoiceStorage {
    * Returns the top_module_id values for posts created in the last `days` days.
    * Used by the pipeline to apply the freshness multiplier to recently-fired modules.
    */
-  getRecentModuleIds(days: number): Promise<string[]>;
+  getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]>;
+
+  /** Get the last N arc_types for an author, ordered by created_at DESC. */
+  getRecentArcTypes(authorLogin: string | null, limit: number): Promise<string[]>;
 
   /** Get all posts with status='queued' for a given platform. */
   getQueuedPosts(platform: Platform): Promise<VoicePost[]>;

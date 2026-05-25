@@ -60,6 +60,10 @@ export class ComplexityModule implements CodeAnalyzer {
           before: `~${removedDecisions} decision branches`,
           after: `~${addedDecisions} decision branches (reduced by ${delta})`,
         },
+        verifiableFacts: [
+          `Reduced decision points from ~${removedDecisions} to ~${addedDecisions} (delta: -${delta})`,
+          `${affectedFiles.length} file(s) affected: ${affectedFiles.slice(0, 3).join(', ')}`,
+        ],
       };
     } else {
       // Complexity increase — low signal, only flag if very large
@@ -74,6 +78,9 @@ export class ComplexityModule implements CodeAnalyzer {
         plainLanguage: `The commit added significant branching logic. This may be intentional (handling more cases) but is worth noting as an area to watch.`,
         interestScore: score,
         contextHint: `${affectedFiles[0] ?? 'the codebase'} in ${ctx.repo}`,
+        verifiableFacts: [
+          `Added ~${increase} decision points across ${affectedFiles.length} file(s)`,
+        ],
       };
     }
   }

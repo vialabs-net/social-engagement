@@ -36,6 +36,8 @@ export const ContentPreferencesSchema = z.object({
   typical_length_delta: z.number().optional(),
   industry_context_preference: z.enum(['prefer', 'neutral', 'avoid']).optional(),
   expired_rate_30d: z.number().min(0).max(1).optional(),
+  penalized_modules: z.array(z.string()).optional(),
+  penalized_arc_types: z.array(z.string()).optional(),
   updated_at: z.string().optional(),
 });
 

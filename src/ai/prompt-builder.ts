@@ -164,6 +164,8 @@ export function buildUserPrompt(
   recentModuleIds: string[] = [],
   chapterContext?: string,
   industryContext?: string,
+  developmentalAngle?: string,
+  instagramEnabled = false,
 ): string {
   const parts: string[] = [];
 
@@ -240,7 +242,12 @@ export function buildUserPrompt(
 
   if (commit.prContext) {
     parts.push('');
-    parts.push(buildContributorVoiceBlock(commit.prContext));
+    parts.push(buildContributorVoiceBlock(commit.prContext, commit.isPrivateRepo));
+  }
+
+  if (developmentalAngle) {
+    parts.push('');
+    parts.push(developmentalAngle);
   }
 
   const hasVerifiableFacts = findings.some((f) => f.verifiableFacts && f.verifiableFacts.length > 0);
@@ -250,6 +257,11 @@ export function buildUserPrompt(
   if (hasVerifiableFacts) {
     parts.push('Where a finding includes a <facts> block: you may state, rephrase, condense, or omit any listed fact. You may add ONE interpretive sentence connecting the facts to a broader engineering principle.');
     parts.push('You MAY NOT: state structural facts not in the list; compare to a prior state unless the commit body explicitly states the prior behavior; make absence claims about code you cannot see; describe internal logic of files whose contents are not in the facts list.');
+    parts.push('');
+  } else {
+    parts.push('None of the findings include a verified-facts list.');
+    parts.push('Do not state specific percentages, timing measurements, or line counts — they cannot be verified from the information provided.');
+    parts.push('You may describe the structural change (e.g., "removed nested branching") but not quantify it (e.g., "removed 40% of branches").');
     parts.push('');
   }
   parts.push('Write one main post and one short variant.');
@@ -263,18 +275,31 @@ export function buildUserPrompt(
   }
   parts.push('Use concrete implementation details. Do not invent files, numbers, or project context.');
   parts.push('If a finding touches AI, translate that into the human-made constraint, interface, or behavior change. Do not give the model authorship credit for the commit.');
-  parts.push('If <industry_context> is used, treat it as parallel validation from the industry, never as a citation or proof of the argument.');
+  parts.push('If <industry_context> is present, use it as the editorial frame — it names the unresolved tension the field is navigating that makes this commit worth writing about. The code is the evidence; the industry context is why the evidence matters. Never cite it as a source or proof.');
   parts.push('The main post must stay at or under the configured character cap.');
   parts.push('Keep the main post under the configured hard cap. If needed, prefer fewer points and cleaner sentences over extra explanation.');
   parts.push('If <voice_exposure> exists, match its level of directness and structure without copying phrases literally.');
   parts.push('');
-  parts.push('<post_draft>');
-  parts.push('Main post here.');
-  parts.push('</post_draft>');
+  parts.push('Write the following variants:');
+  parts.push('- LinkedIn: full narrative post within the configured character cap.');
+  if (instagramEnabled) {
+    parts.push('- Instagram: first line ≤125 chars, must work as a standalone hook before "see more". Optional: 1-2 short supporting lines. Hashtags on last line only.');
+  }
+  parts.push('- Twitter: maximum density. One claim + mechanism. No filler.');
   parts.push('');
-  parts.push('<short_draft>');
-  parts.push('Short variant here.');
-  parts.push('</short_draft>');
+  parts.push('<linkedin_draft>');
+  parts.push('LinkedIn post here.');
+  parts.push('</linkedin_draft>');
+  parts.push('');
+  if (instagramEnabled) {
+    parts.push('<instagram_draft>');
+    parts.push('Instagram caption here.');
+    parts.push('</instagram_draft>');
+    parts.push('');
+  }
+  parts.push('<twitter_draft>');
+  parts.push('Twitter post here.');
+  parts.push('</twitter_draft>');
   parts.push('</task>');
 
   return parts.join('\n');
@@ -283,18 +308,17 @@ export function buildUserPrompt(
 export function buildIndustryContextBlock(input: IndustryContextPromptInput): string {
   const sourceFamily = inferIndustrySourceFamily(input.articleUrl);
   const lines = [
-    'This is parallel industry signal, not source attribution.',
-    'The author is speaking from their own code and judgment. Do not imply they read the matched article.',
-    'Only use this if it reinforces a point already present in the commit and findings.',
-    'Keep it subordinate to the main argument. If removed, the post should still work.',
+    'This is the industry tension that makes the author\'s specific decision editorially significant.',
+    'The author is speaking from their own code and judgment — do not imply they read the matched article.',
     `Shared pattern: ${input.connection}`,
-    'Use this pattern to position the author\'s specific decision within the broader industry movement.',
-    'Be specific: name the pattern, say who else is navigating it (teams, companies, the field in general), and surface what is distinct or notable about how the author approached it.',
-    'The goal is not to say "others do this too" — it is to show why this particular implementation choice is interesting given what the industry is wrestling with.',
-    'Ask implicitly: who is dealing with this? are they solving it the same way? what is different here and why does that matter?',
+    'Use this as the frame, not the footnote: name the unresolved tension the field is navigating, then show how the author\'s decision is a concrete answer to it.',
+    'The technical detail in the commit is the evidence. The industry context is what explains why that evidence matters beyond this one codebase.',
+    'A reader who does not know this author should finish the post understanding both what was built and why the broader engineering community is still working through this class of problem.',
+    'Be specific: name the pattern and the tension it carries. Say what teams or the field in general are still trading off. Surface what is distinct or notable about how this author approached it.',
+    'Do not use the industry context to validate the author. Use it to show that the author is working on something that has no fully settled answer yet.',
     'Never mention the article title.',
     'Never write "according to", "as this article explains", "after reading", or "inspired by".',
-    'Never use filler phrases like "more and more teams are doing this" without specifying the pattern and the tension it resolves.',
+    'Never use filler phrases like "more and more teams are doing this" without naming the specific tradeoff that makes the pattern hard.',
   ];
 
   if (sourceFamily) {
@@ -596,8 +620,11 @@ function inferIndustrySourceFamily(articleUrl?: string | null): string | null {
   return null;
 }
 
-function buildContributorVoiceBlock(prContext: PrContext): string {
-  const { outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence } = prContext;
+function buildContributorVoiceBlock(prContext: PrContext, isPrivateRepo: boolean): string {
+  const {
+    outcome, upstreamOwner, upstreamRepo, prNumber, prTitle, supersededEvidence,
+    prDescription, closingIssues, reviewSummaries, changesRequestedCount,
+  } = prContext;
 
   // Gate: medium confidence is not strong enough to assert incorporation in the post.
   const effectiveOutcome =
@@ -619,10 +646,49 @@ function buildContributorVoiceBlock(prContext: PrContext): string {
       ? `Maintainer reference: "${supersededEvidence.maintainerComment}"\n`
       : '';
 
+  const descriptionBlock = prDescription
+    ? `PR description (author's own words — use as context, do not quote directly):\n${prDescription}\n`
+    : '';
+
+  const privateNote = isPrivateRepo && prDescription
+    ? 'This PR description comes from a private repository. Describe the engineering challenge and solution at the level of an engineering blog post (Uber Engineering, Slack Engineering). Safe to include: the technical pattern, the problem class, the design decision, the operational consequence. Do not include: internal service names, endpoint paths, customer-specific terminology, proprietary business logic, or specific numbers that reveal competitive position.\n'
+    : '';
+
+  const issueBlock = (() => {
+    if (!closingIssues || closingIssues.length === 0) return '';
+    const lines = closingIssues.map((issue) => {
+      const statsStr = `${issue.totalReactions} reactions, ${issue.totalComments} comments`;
+      const titleLine = `Closes #${issue.number} — "${issue.title}" (${statsStr})`;
+      const bodyLine = issue.bodySnippet ? `Problem description: ${issue.bodySnippet}` : '';
+      return bodyLine ? `${titleLine}\n${bodyLine}` : titleLine;
+    });
+    const hasOpenIssue = closingIssues.some((i) => i.state === 'OPEN');
+    const openNote = hasOpenIssue
+      ? '\nNote: this issue is still open — the commit partially addresses it. Do not present it as fully resolved tension.'
+      : '';
+    const privacyNote = isPrivateRepo
+      ? '\nDescribe the engineering challenge and solution at the engineering blog level. Omit internal service names, endpoint paths, customer-specific details, and proprietary business logic. Focus on the pattern: what was the problem class, what was the decision, what was the consequence.'
+      : '';
+    return `Issue context (what this commit resolves):\n${lines.join('\n\n')}\n\nUse this as the tension source for the narrative. Do not invent additional problems beyond what is described here.${openNote}${privacyNote}\n`;
+  })();
+
+  const reviewBlock = (() => {
+    if (!reviewSummaries || reviewSummaries.length === 0) return '';
+    const count = changesRequestedCount ?? 0;
+    const header = count > 0
+      ? `Review context (${count} change request${count !== 1 ? 's' : ''} before merge):`
+      : 'Review context:';
+    const lines = reviewSummaries.map((r) => `- ${r.state}: "${r.body}"`);
+    const arcSignal = count > 0
+      ? ' This is a signal of tradeoff_made or broken_assumption arc.'
+      : '';
+    return `${header}\n${lines.join('\n')}\n\nThe iteration process is part of the story — the author refined the design under reviewer feedback.${arcSignal}\n`;
+  })();
+
   return `<contributor_voice>
 This commit is from a fork. PR context: ${outcomeText}.
 PR title: "${prTitle}".
-${maintainerLine}
+${descriptionBlock}${privateNote}${issueBlock}${reviewBlock}${maintainerLine}
 Rules:
 - Cite the project as ${upstreamOwner}/${upstreamRepo} (the upstream), not the fork.
 - If outcome is open: describe the work as submitted and under review, not as accepted. Do not predict reviewer reactions. Acceptable: "I proposed X to ${upstreamOwner}/${upstreamRepo}." Not acceptable: "I added X to ${upstreamOwner}/${upstreamRepo}."

@@ -47,6 +47,19 @@ export function filterFindingsByContentStrategy(
   return findings.filter((finding) => focusSet.has(finding.moduleId));
 }
 
+export function applyPenalizedModules(
+  findings: Finding[],
+  voiceProfile: VoiceProfile,
+): Finding[] {
+  const penalized = voiceProfile.content_preferences?.penalized_modules;
+  if (!penalized || penalized.length === 0) return findings;
+  const penalizedSet = new Set(penalized);
+  const preferred = findings.filter((f) => !penalizedSet.has(f.moduleId));
+  const deprioritized = findings.filter((f) => penalizedSet.has(f.moduleId));
+  // Fail-open: if all findings are penalized, return them anyway rather than skipping the commit.
+  return preferred.length > 0 ? [...preferred, ...deprioritized] : findings;
+}
+
 export function matchesSkipPatterns(
   commit: EnrichedCommit,
   findings: Finding[],

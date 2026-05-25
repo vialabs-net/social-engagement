@@ -18,6 +18,9 @@ export interface SynthesisPromptInput {
   readonly commitGroups: SynthesisCommitGroup[]; // oldest first
   readonly coherenceScore?: CoherenceScore;       // only for arco
   readonly lastPostSummary?: string;
+  readonly developmentalAngle?: string;           // R3 arc guidance block
+  readonly industryContext?: string;              // editorial tension frame from article match
+  readonly featuredSignal?: string;              // specific_change that triggered the article match
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -65,6 +68,14 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
     parts.push('</coherence_evidence>');
   }
 
+  // Industry context (editorial tension frame)
+  if (input.industryContext) {
+    parts.push('');
+    parts.push('<industry_context>');
+    parts.push(input.industryContext);
+    parts.push('</industry_context>');
+  }
+
   // Synthesis task
   const spanDays = computeSpanDays(input.commitGroups);
   const lastPostNote = input.lastPostSummary
@@ -87,7 +98,45 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
   }
 
   parts.push(lastPostNote);
+
+  // R4: technical accuracy constraint — signals carry no verified fact list
+  parts.push('');
+  parts.push('Do not state specific percentages, timing measurements, or line counts — they cannot be verified from the signal descriptions provided.');
+  parts.push('You may describe structural changes (e.g., "removed nested branching") but not quantify them (e.g., "removed 40% of branches").');
   parts.push('</synthesis_task>');
+
+  if (input.developmentalAngle) {
+    parts.push('');
+    parts.push(input.developmentalAngle);
+  }
+
+  parts.push('');
+  if (input.featuredSignal) {
+    parts.push(`Write the post about this specific decision: "${input.featuredSignal}". It connects to the industry context above and carries the strongest editorial story. Do not reference other signals, other work, or the time span.`);
+  } else {
+    parts.push('Among all signals, identify the single decision or change that carries the strongest complete story (clearest tension + resolution). Write the post exclusively about that one decision. Do not reference other signals, other work, or the time span.');
+  }
+
+  const instagramEnabled = input.config.platforms.instagram.enabled;
+
+  parts.push('');
+  parts.push('Write the following variants. Wrap each in these XML tags exactly:');
+  parts.push('');
+  parts.push('<linkedin_draft>');
+  parts.push('LinkedIn post here.');
+  parts.push('</linkedin_draft>');
+  parts.push('');
+  if (instagramEnabled) {
+    parts.push('- Instagram: first line ≤125 chars, must work as a standalone hook before "see more". Optional: 1-2 short supporting lines. Hashtags on last line only.');
+    parts.push('');
+    parts.push('<instagram_draft>');
+    parts.push('Instagram caption here.');
+    parts.push('</instagram_draft>');
+    parts.push('');
+  }
+  parts.push('<opening_move>');
+  parts.push('One-word label for the opening technique used (e.g. question, statistic, anecdote, contradiction, problem-first, declarative).');
+  parts.push('</opening_move>');
 
   return parts.join('\n');
 }

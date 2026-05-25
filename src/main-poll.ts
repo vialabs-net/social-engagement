@@ -8,6 +8,8 @@ import { loadConfig } from './config/loader.js';
 import { logger } from './utils/logger.js';
 import { bestEffort } from './utils/best-effort.js';
 import { isInteresting } from './utils/commit-filter.js';
+import { detectCommitIntent, computeCollaborationWeight } from './utils/commit-classifier.js';
+import { selectDevelopmentalAngle, buildAngleBlock, type ArcType } from './ai/developmental-editor.js';
 import { GitHubClient } from './github/client.js';
 import { pollNewPushEvents } from './github/events-poller.js';
 import { enrichCommit, type EnrichedCommit } from './github/commit-enricher.js';
@@ -104,7 +106,7 @@ async function main(): Promise<void> {
   );
 
   logger.info('poll.events_found', { count: events.length });
-  const recentModuleIds = await storage.getRecentModuleIds(30);
+  const recentModuleIds = await storage.getRecentModuleIds(30, config.author.github_username);
   const recentModuleFireCounts = buildModuleFireCounts(recentModuleIds);
   const dayStartIso = getStartOfDayIso(config.scheduling.timezone);
   const dailyLimit = config.posting.max_daily_posts_per_author;
@@ -265,6 +267,12 @@ async function main(): Promise<void> {
     const authorState = authorStates.get(authorKey);
     if (!authorState) continue;
 
+    // Fetch arc history once per author (fail-open — anti-repetition disabled if query fails)
+    let recentArcTypes: ArcType[] = [];
+    try {
+      recentArcTypes = (await storage.getRecentArcTypes(authorState.authorLogin, 5)) as ArcType[];
+    } catch { /* fail-open */ }
+
     while (authorState.todayDrafts.length < dailyLimit && candidates.length > 0) {
       const [candidate] = selectTopDailyCandidates(candidates, authorState.todayDrafts, 1);
       if (!candidate) break;
@@ -299,6 +307,32 @@ async function main(): Promise<void> {
             ) ?? undefined
           : undefined;
 
+        // R3: select narrative arc — fail-open if no evidence
+        const candidateCollabWeight = computeCollaborationWeight(candidate.commit.prContext);
+        const candidateIntent = detectCommitIntent({
+          message: candidate.commit.message,
+          branchRef: candidate.commit.branchRef,
+          prTitle: candidate.commit.prContext?.prTitle,
+          moduleIds: candidate.findings.map((f) => f.moduleId),
+        });
+        let developmentalAngle: string | undefined;
+        let selectedArcType: string | null = null;
+        try {
+          const angle = selectDevelopmentalAngle({
+            findings: candidate.findings,
+            commitIntent: candidateIntent,
+            closingIssues: candidate.commit.prContext?.closingIssues,
+            changesRequestedCount: candidate.commit.prContext?.changesRequestedCount ?? 0,
+            collaborationWeight: candidateCollabWeight,
+            recentArcTypes,
+            discouragedArcTypes: (candidate.voiceProfile.content_preferences?.penalized_arc_types ?? []) as ArcType[],
+          });
+          if (angle) {
+            developmentalAngle = buildAngleBlock(angle, candidateCollabWeight);
+            selectedArcType = angle.arcType;
+          }
+        } catch { /* fail-open */ }
+
         const { bufferText, draftId, openingMove } = await generatePosts(
           anthropic,
           candidate.commit,
@@ -312,9 +346,11 @@ async function main(): Promise<void> {
             bootstrapPosts: candidate.voiceProfile.bootstrap_posts ?? [],
             recentModuleIds,
             chapterContext,
+            developmentalAngle,
             draftMetadata: {
               author_login: candidate.authorLogin,
               generation_system: authorState.voiceStage === 'cold' ? 'v1' : 'v2_progressive',
+              arc_type: selectedArcType,
             },
             draftIndexToday,
             varietyConstraint,

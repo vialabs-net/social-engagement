@@ -73,6 +73,7 @@ export class SupabaseStorage implements IVoiceStorage {
         match_connection: input.match_connection ?? null,
         generation_system: input.generation_system ?? null,
         opening_move: input.opening_move ?? null,
+        arc_type: input.arc_type ?? null,
         status: 'pending' satisfies PostStatus,
         tenant_id: this.tenantId,
       })
@@ -405,17 +406,36 @@ export class SupabaseStorage implements IVoiceStorage {
     return [...authorSet];
   }
 
-  async getRecentModuleIds(days: number): Promise<string[]> {
+  async getRecentModuleIds(days: number, authorLogin?: string): Promise<string[]> {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await this.db
+    let query = this.db
       .from('voice_posts')
       .select('top_module_id')
       .eq('tenant_id', this.tenantId)
       .gte('created_at', since)
       .not('top_module_id', 'is', null);
 
+    if (authorLogin) query = query.eq('author_login', authorLogin);
+
+    const { data, error } = await query;
     if (error) throw new Error(`getRecentModuleIds failed: ${error.message}`);
     return (data ?? []).map((r) => (r as { top_module_id: string }).top_module_id);
+  }
+
+  async getRecentArcTypes(authorLogin: string | null, limit: number): Promise<string[]> {
+    let query = this.db
+      .from('voice_posts')
+      .select('arc_type')
+      .eq('tenant_id', this.tenantId)
+      .not('arc_type', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (authorLogin) query = query.eq('author_login', authorLogin);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`getRecentArcTypes failed: ${error.message}`);
+    return (data ?? []).map((r) => (r as { arc_type: string }).arc_type);
   }
 
   async hasDraft(commit_sha: string, platform: Platform): Promise<boolean> {
