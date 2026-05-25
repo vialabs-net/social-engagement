@@ -5,7 +5,6 @@ import { logger } from '../utils/logger.js';
 
 interface DevProfileRow {
   readonly github_login: string;
-  readonly tenant_id: string;
   readonly encrypted_dek: string | null;
   readonly github_pat: string | null;
   readonly pat_last_event_id: string | null;
@@ -24,48 +23,51 @@ interface RawPushEvent {
 }
 
 /**
- * Polls GitHub Events API for all tenants that have a github_pat configured.
+ * Polls GitHub Events API for all developer_profiles that have a github_pat.
+ * Resolves tenant_id by matching tenants.github_username = github_login.
  * For each new push event found, inserts a job into job_queue.
  * Idempotency key prevents duplicates with App webhook-sourced jobs.
  */
 export async function runPatPoller(db: SupabaseClient): Promise<void> {
-  // Join developer_profiles with tenants to get tenant_id per github_login.
   const { data, error } = await db
     .from('developer_profiles')
-    .select('github_login, encrypted_dek, github_pat, pat_last_event_id, pat_last_etag, tenants!inner(id)')
+    .select('github_login, encrypted_dek, github_pat, pat_last_event_id, pat_last_etag')
     .not('github_pat', 'is', null);
 
   if (error) {
     throw new Error(`pat-poller: failed to fetch developer profiles: ${error.message}`);
   }
 
-  const rows = (data ?? []) as unknown as Array<Omit<DevProfileRow, 'tenant_id'> & { tenants: { id: string } }>;
+  const rows = (data ?? []) as DevProfileRow[];
 
-  logger.info('pat-poller.start', { tenantCount: rows.length });
+  logger.info('pat-poller.start', { profileCount: rows.length });
 
   for (const row of rows) {
-    const tenantId = row.tenants.id;
     try {
-      await pollTenant(db, {
-        github_login: row.github_login,
-        tenant_id: tenantId,
-        encrypted_dek: row.encrypted_dek,
-        github_pat: row.github_pat,
-        pat_last_event_id: row.pat_last_event_id,
-        pat_last_etag: row.pat_last_etag,
-      });
+      const { data: tenant } = await db
+        .from('tenants')
+        .select('id')
+        .eq('github_username', row.github_login)
+        .maybeSingle();
+
+      if (!tenant) {
+        logger.warn('pat-poller.no_tenant', { login: row.github_login });
+        continue;
+      }
+
+      await pollTenant(db, row, (tenant as { id: string }).id);
     } catch (err) {
-      logger.warn('pat-poller.tenant_failed', {
+      logger.warn('pat-poller.profile_failed', {
         login: row.github_login,
         error: String(err),
       });
     }
   }
 
-  logger.info('pat-poller.done', { tenantCount: rows.length });
+  logger.info('pat-poller.done', { profileCount: rows.length });
 }
 
-async function pollTenant(db: SupabaseClient, row: DevProfileRow): Promise<void> {
+async function pollTenant(db: SupabaseClient, row: DevProfileRow, tenantId: string): Promise<void> {
   const resolved = await resolveTenantSecrets({
     encrypted_dek: row.encrypted_dek,
     buffer_access_token: null,
@@ -107,10 +109,10 @@ async function pollTenant(db: SupabaseClient, row: DevProfileRow): Promise<void>
     const { before, head, ref } = event.payload;
     if (!before || !head) continue;
 
-    const idempotencyKey = `${row.tenant_id}:${head}`;
+    const idempotencyKey = `${tenantId}:${head}`;
 
     const { error: insertError } = await db.from('job_queue').insert({
-      tenant_id: row.tenant_id,
+      tenant_id: tenantId,
       repo: event.repo.name,
       before_sha: before,
       after_sha: head,
