@@ -1043,6 +1043,7 @@ async function runAccumulationCheck(
 
   // Industry context — fail-open
   let synthesisIndustryContext: string | undefined;
+  let synthesisFeaturedSignal: string | undefined;
   if (embedder) {
     try {
       const synFindingsForMatch: Finding[] = allSignals.map((s) => ({
@@ -1057,6 +1058,7 @@ async function runAccumulationCheck(
       const match = await matchFindingsToArticles(synFindingsForMatch, embedder, matcherAi, db);
       if (match) {
         synthesisIndustryContext = buildIndustryContextBlock({ connection: match.connection, articleUrl: match.articleUrl });
+        synthesisFeaturedSignal = match.matchedFinding;
       }
     } catch (err) {
       logger.warn('worker.accumulation.industry_context.skipped', { authorLogin, repo: fullRepo, error: String(err) });
@@ -1077,6 +1079,7 @@ async function runAccumulationCheck(
     draftIndexToday: authorState.todayDrafts.length + i,
     developmentalAngle: synthesisAngle,
     industryContext: synthesisIndustryContext,
+    featuredSignal: synthesisFeaturedSignal,
   }));
 
   // Phase 1: generate all buffer texts in parallel — fail-fast, no DB writes.

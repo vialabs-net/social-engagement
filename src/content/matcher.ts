@@ -31,6 +31,7 @@ export interface MatchedContext {
   readonly connection: string;   // one shared-pattern sentence from cross-encoder
   readonly articleTitle: string;
   readonly articleUrl: string;
+  readonly matchedFinding: string; // the finding text that triggered the match
 }
 
 interface FindingInput {
@@ -337,6 +338,7 @@ export async function matchFindingsToArticles(
         connection: match.connection,
         articleTitle: match.title,
         articleUrl: match.url,
+        matchedFinding: finding.finding,
       };
     } catch (err) {
       logger.warn('content.match.finding_error', { moduleId: finding.moduleId, error: String(err) });

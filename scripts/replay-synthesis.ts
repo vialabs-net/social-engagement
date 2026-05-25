@@ -166,6 +166,7 @@ async function main(): Promise<void> {
   console.log(SEP);
 
   let industryContext: string | undefined;
+  let featuredSignal: string | undefined;
   if (embedder) {
     try {
       const synFindingsForMatch = allSignals.map((s: SignalEvent) => ({
@@ -180,7 +181,9 @@ async function main(): Promise<void> {
       const match = await matchFindingsToArticles(synFindingsForMatch, embedder, matcherAi, db);
       if (match) {
         industryContext = buildIndustryContextBlock({ connection: match.connection, articleUrl: match.articleUrl });
+        featuredSignal = match.matchedFinding;
         console.log(`  matched: ${match.articleTitle}`);
+        console.log(`  featured signal: ${match.matchedFinding}`);
         console.log(`  connection: ${match.connection}`);
       } else {
         console.log('  No article match found');
@@ -216,6 +219,7 @@ async function main(): Promise<void> {
     draftIndexToday: 0,
     developmentalAngle,
     industryContext,
+    featuredSignal,
   };
 
   // ── Stage 7: Claude synthesis ────────────────────────────────────────────

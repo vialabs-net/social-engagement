@@ -20,6 +20,7 @@ export interface SynthesisPromptInput {
   readonly lastPostSummary?: string;
   readonly developmentalAngle?: string;           // R3 arc guidance block
   readonly industryContext?: string;              // editorial tension frame from article match
+  readonly featuredSignal?: string;              // specific_change that triggered the article match
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -110,7 +111,11 @@ export function buildSynthesisUserPrompt(input: SynthesisPromptInput): string {
   }
 
   parts.push('');
-  parts.push('Among all signals, identify the single decision or change that carries the strongest complete story (clearest tension + resolution). Write the post exclusively about that one decision. Do not reference other signals, other work, or the time span.');
+  if (input.featuredSignal) {
+    parts.push(`Write the post about this specific decision: "${input.featuredSignal}". It connects to the industry context above and carries the strongest editorial story. Do not reference other signals, other work, or the time span.`);
+  } else {
+    parts.push('Among all signals, identify the single decision or change that carries the strongest complete story (clearest tension + resolution). Write the post exclusively about that one decision. Do not reference other signals, other work, or the time span.');
+  }
 
   const instagramEnabled = input.config.platforms.instagram.enabled;
 

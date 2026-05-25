@@ -22,7 +22,8 @@ export interface SynthesisGeneratorInput {
   readonly coherenceScore?: CoherenceScore; // only for arco
   readonly lastPostSummary?: string;
   readonly developmentalAngle?: string;     // R3 arc guidance block
-  readonly industryContext?: string;        // R4 editorial tension frame from article match
+  readonly industryContext?: string;        // editorial tension frame from article match
+  readonly featuredSignal?: string;         // specific_change text that triggered the article match
   readonly voiceProfile: VoiceProfile;
   readonly voiceStage: VoiceStage;
   readonly config: Config;
@@ -79,6 +80,7 @@ export async function generateBufferText(
     draftIndexToday: input.draftIndexToday,
     commitSha: representativeSha,
     industryContext: input.industryContext,
+    featuredSignal: input.featuredSignal,
   };
 
   const systemPrompt = buildSynthesisSystemPrompt(promptInput);
