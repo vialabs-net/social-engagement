@@ -92,7 +92,7 @@ describe('isInteresting', () => {
 
   it('rejects a commit matching an excludePattern', () => {
     const result = isInteresting(
-      { ...REAL_COMMIT, message: 'chore: bump version to 1.2.3' },
+      { ...REAL_COMMIT, message: 'chore: update ci config' },
       { ...BASE_CONFIG, excludePatterns: ['^chore:'] },
     );
     expect(result.interesting).toBe(false);
