@@ -8,6 +8,7 @@ const ENCRYPTED_TOKEN_PREFIX = 'enc-v1';
 interface TenantSecretsInput {
   readonly bufferAccessToken?: string | null;
   readonly linkedinAccessToken?: string | null;
+  readonly githubPat?: string | null;
 }
 
 interface LoadedDek {
@@ -19,17 +20,20 @@ export interface TenantSecretsRow {
   readonly encrypted_dek: string | null;
   readonly buffer_access_token: string | null;
   readonly linkedin_access_token?: string | null;
+  readonly github_pat?: string | null;
 }
 
 export interface ResolvedTenantSecrets {
   readonly bufferAccessToken: string | null;
   readonly linkedinAccessToken: string | null;
+  readonly githubPat: string | null;
 }
 
 export interface SealedTenantSecrets {
   readonly encryptedDek: string;
   bufferAccessToken?: string | null;
   linkedinAccessToken?: string | null;
+  githubPat?: string | null;
 }
 
 let kmsClient: KeyManagementServiceClient | null = null;
@@ -154,6 +158,12 @@ export async function sealTenantSecrets(
       : null;
   }
 
+  if (secrets.githubPat !== undefined) {
+    sealed.githubPat = secrets.githubPat
+      ? encryptWithDek(dek.plaintextDek, secrets.githubPat)
+      : null;
+  }
+
   return sealed;
 }
 
@@ -162,20 +172,20 @@ export async function resolveTenantSecrets(row: TenantSecretsRow): Promise<Resol
     return {
       bufferAccessToken: row.buffer_access_token,
       linkedinAccessToken: row.linkedin_access_token ?? null,
+      githubPat: row.github_pat ?? null,
     };
   }
 
   const plaintextDek = await unwrapDek(row.encrypted_dek);
+
+  function decryptField(value: string | null | undefined): string | null {
+    if (!value) return null;
+    return isEncryptedToken(value) ? decryptWithDek(plaintextDek, value) : value;
+  }
+
   return {
-    bufferAccessToken: row.buffer_access_token
-      ? (isEncryptedToken(row.buffer_access_token)
-          ? decryptWithDek(plaintextDek, row.buffer_access_token)
-          : row.buffer_access_token)
-      : null,
-    linkedinAccessToken: row.linkedin_access_token
-      ? (isEncryptedToken(row.linkedin_access_token)
-          ? decryptWithDek(plaintextDek, row.linkedin_access_token)
-          : row.linkedin_access_token)
-      : null,
+    bufferAccessToken: decryptField(row.buffer_access_token),
+    linkedinAccessToken: decryptField(row.linkedin_access_token),
+    githubPat: decryptField(row.github_pat),
   };
 }

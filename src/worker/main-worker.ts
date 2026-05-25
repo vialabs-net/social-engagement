@@ -12,7 +12,6 @@ const GITHUB_APP_ID = process.env['GITHUB_APP_ID'] ?? '';
 const GITHUB_APP_PRIVATE_KEY = process.env['GITHUB_APP_PRIVATE_KEY'] ?? '';
 const OPENAI_API_KEY = process.env['OPENAI_API_KEY'];
 const APP_BASE_URL = process.env['APP_BASE_URL'] ?? '';
-const GITHUB_PERSONAL_ACCESS_TOKEN = process.env['GITHUB_PERSONAL_ACCESS_TOKEN'];
 
 for (const [name, value] of [
   ['SUPABASE_URL', SUPABASE_URL],
@@ -38,7 +37,6 @@ const deps: ProcessJobDeps = {
   anthropicApiKey: ANTHROPIC_API_KEY,
   openaiApiKey: OPENAI_API_KEY,
   appBaseUrl: APP_BASE_URL,
-  githubPat: GITHUB_PERSONAL_ACCESS_TOKEN,
 };
 
 /**
