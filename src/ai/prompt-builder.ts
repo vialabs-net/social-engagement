@@ -166,6 +166,7 @@ export function buildUserPrompt(
   industryContext?: string,
   developmentalAngle?: string,
   instagramEnabled = false,
+  featuredFinding?: string,
 ): string {
   const parts: string[] = [];
 
@@ -265,7 +266,11 @@ export function buildUserPrompt(
     parts.push('');
   }
   parts.push('Write one main post and one short variant.');
-  parts.push('Feature the highest-value finding and only keep secondary findings when they sharpen the same story.');
+  if (featuredFinding) {
+    parts.push(`Write the post about this specific finding: "${featuredFinding}". It connects to the industry context above. Do not reference other findings, other work, or unrelated context.`);
+  } else {
+    parts.push('Write the post exclusively about the highest-value finding. Do not reference other findings unless they are a direct consequence of the same decision.');
+  }
   parts.push('Lead with the engineering decision or consequence, not the tool used to get there.');
   parts.push('Describe what changed in the system behavior, control surface, reliability, cost, or operational flexibility.');
   if (commit.isPrivateRepo) {
