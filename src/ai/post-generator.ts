@@ -24,6 +24,7 @@ export interface GeneratePostsOptions {
   recentModuleIds?: string[];
   chapterContext?: string;
   industryContext?: string;
+  featuredFinding?: string;
   developmentalAngle?: string;
   draftMetadata?: Partial<SaveDraftInput>;
   draftIndexToday?: number;
@@ -68,6 +69,7 @@ export async function generatePosts(
     options.industryContext,
     options.developmentalAngle,
     instagramEnabled,
+    options.featuredFinding,
   );
 
   logger.info('ai.generate.start', {

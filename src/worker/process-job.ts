@@ -556,6 +556,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
         // Content matching — inject industry context when a strong match is found.
         // Graceful degradation: any failure skips context, post generated normally.
         let industryContext: string | undefined;
+        let featuredFinding: string | undefined;
         let draftMetadata: Partial<SaveDraftInput> = {
           author_login: candidate.authorLogin,
           generation_system: authorState.voiceStage === 'cold' ? 'v1' : 'v2_progressive',
@@ -590,6 +591,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
                   connection: match.connection,
                   articleUrl: match.articleUrl,
                 });
+                featuredFinding = match.matchedFinding;
                 draftMetadata = {
                   ...draftMetadata,
                   context_status: 'matched',
@@ -671,6 +673,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
             recentModuleIds,
             chapterContext,
             industryContext,
+            featuredFinding,
             developmentalAngle,
             draftMetadata,
             draftIndexToday,
