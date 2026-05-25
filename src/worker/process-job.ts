@@ -176,17 +176,7 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     ref: job.ref,
   });
 
-  // Installation token is valid for 1 hour — enough for one job
-  const installationToken = await getInstallationToken(
-    deps.appId,
-    deps.privateKey,
-    tenant.github_installation_id,
-  );
-
-  const github = new GitHubClient(installationToken);
-
-  // PAT fallback: resolve from the tenant's developer_profile.
-  // Used when the App installation token gets 403 (repo org without App installed).
+  // Resolve PAT first — needed as primary client if App isn't installed on this tenant.
   let patClient: GitHubClient | undefined;
   try {
     const { data: tenantDevProfile } = await deps.db
@@ -205,6 +195,22 @@ export async function processJob(jobId: string, deps: ProcessJobDeps): Promise<v
     }
   } catch (err) {
     logger.warn('worker.pat_fallback.load_failed', { tenant: tenant.github_username, error: String(err) });
+  }
+
+  // Installation token is valid for 1 hour — enough for one job.
+  // Falls back to PAT when the App isn't installed on this tenant's org.
+  let github: GitHubClient;
+  try {
+    const installationToken = await getInstallationToken(
+      deps.appId,
+      deps.privateKey,
+      tenant.github_installation_id,
+    );
+    github = new GitHubClient(installationToken);
+  } catch (err) {
+    if (!patClient) throw err;
+    logger.info('worker.app_auth_failed.pat_primary', { tenant: tenant.github_username, error: String(err) });
+    github = patClient;
   }
 
   const generationAi = createAIClient('anthropic', deps.anthropicApiKey, config.ai.model, config.ai.max_tokens);
