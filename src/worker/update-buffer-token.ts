@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { resolveTenantSecrets, sealTenantSecrets } from '../src/security/tenant-secrets.js';
+import { sealTenantSecrets } from '../security/tenant-secrets.js';
 
 const SUPABASE_URL = process.env['SUPABASE_URL'] ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '';
